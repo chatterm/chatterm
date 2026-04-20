@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# OS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log

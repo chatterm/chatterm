@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>ChatTerm</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* VSCode Dark base */
+    --activity-bar: #333333;
+    --sidebar-bg: #252526;
+    --sidebar-hover: #2a2d2e;
+    --sidebar-active: #37373d;
+    --editor-bg: #1e1e1e;
+    --panel-bg: #252526;
+    --border: #1e1e1e;
+    --border-strong: #3c3c3c;
+    --text: #cccccc;
+    --text-dim: #858585;
+    --text-mute: #6a6a6a;
+    --text-strong: #ffffff;
+    --accent: #0e639c;
+    --accent-hover: #1177bb;
+    --accent-faint: rgba(14, 99, 156, 0.18);
+    --unread: #f14c4c;
+    --status-running: #4ec9b0;
+    --status-waiting: #dcdcaa;
+    --status-error: #f48771;
+    --status-done: #569cd6;
+    --status-idle: #6a6a6a;
+    /* terminal ansi */
+    --ansi-black: #000000;
+    --ansi-red: #f48771;
+    --ansi-green: #b5cea8;
+    --ansi-yellow: #dcdcaa;
+    --ansi-blue: #569cd6;
+    --ansi-magenta: #c586c0;
+    --ansi-cyan: #4ec9b0;
+    --ansi-white: #d4d4d4;
+    --ansi-gray: #858585;
+    --ansi-bright-red: #f14c4c;
+    --ansi-bright-green: #89d185;
+    --ansi-bright-yellow: #f9f1a5;
+    --ansi-bright-blue: #3794ff;
+    --ansi-bright-magenta: #d670d6;
+    --ansi-bright-cyan: #29b8db;
+    /* avatar palette (muted, VSCode-ish) */
+    --av-1: #4ec9b0;
+    --av-2: #569cd6;
+    --av-3: #c586c0;
+    --av-4: #dcdcaa;
+    --av-5: #ce9178;
+    --av-6: #9cdcfe;
+    --av-7: #b5cea8;
+    --av-8: #f48771;
+    /* layout */
+    --density-row-y: 10px;
+    --density-row-gap: 2px;
+    --density-font: 13px;
+  }
+
+  [data-tone="warm"] {
+    --editor-bg: #1f1c1a;
+    --sidebar-bg: #27221f;
+    --panel-bg: #27221f;
+    --sidebar-hover: #2c2724;
+    --sidebar-active: #3a332e;
+    --activity-bar: #2b2622;
+    --border-strong: #3d342e;
+    --text: #d4ccc4;
+    --text-dim: #8f8479;
+  }
+  [data-tone="cool"] {
+    --editor-bg: #1a1d22;
+    --sidebar-bg: #1f232a;
+    --panel-bg: #1f232a;
+    --sidebar-hover: #252a33;
+    --sidebar-active: #30363f;
+    --activity-bar: #22262e;
+    --border-strong: #333843;
+    --text: #c8cdd6;
+    --text-dim: #7d8491;
+  }
+
+  [data-density="compact"] {
+    --density-row-y: 6px;
+    --density-row-gap: 0px;
+    --density-font: 12.5px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    background: var(--editor-bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .mono { font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #555; background-clip: padding-box; border: 2px solid transparent; }
+
+  /* blinking cursor */
+  @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  .cursor { display: inline-block; width: 8px; height: 1.1em; background: var(--text); vertical-align: text-bottom; animation: blink 1s step-end infinite; margin-left: 2px; }
+
+  /* pulse for running */
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(78, 201, 176, 0.6); }
+    70% { box-shadow: 0 0 0 6px rgba(78, 201, 176, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(78, 201, 176, 0); }
+  }
+  .pulse-running { animation: pulse-ring 1.8s infinite; }
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slide-in-top {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes cursor-blink {
+    0%, 50% { background: var(--text); }
+    51%, 100% { background: transparent; }
+  }
+
+  .new-row { animation: slide-in-top 400ms ease-out; }
+  .typing-dot {
+    display: inline-block; width: 4px; height: 4px; background: currentColor; border-radius: 50%;
+    margin: 0 1px; opacity: 0.4;
+    animation: typing-bounce 1.4s infinite;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing-bounce {
+    0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-2px); }
+  }
+
+  button { font-family: inherit; color: inherit; }
+
+  /* spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+
+  /* Search overlay */
+  .cmdk-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+    z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding-top: 120px;
+    animation: fade-in 120ms ease-out;
+  }
+  .cmdk-panel {
+    width: 560px; max-width: 90vw; background: #252526; border: 1px solid #454545;
+    border-radius: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  /* reaction chips */
+  .reaction-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border: 1px solid var(--border-strong); border-radius: 10px;
+    background: #2d2d30; font-size: 11px; cursor: pointer;
+    transition: all 120ms;
+  }
+  .reaction-chip:hover { border-color: var(--accent); background: var(--accent-faint); }
+  .reaction-chip.active { border-color: var(--accent); background: var(--accent-faint); color: var(--text-strong); }
+
+  /* hover row actions */
+  .row-hover-actions { opacity: 0; transition: opacity 120ms; }
+  .term-line:hover .row-hover-actions { opacity: 1; }
+
+  /* tweaks panel */
+  .tweaks-panel {
+    position: fixed; right: 16px; bottom: 16px;
+    width: 260px; background: #252526; border: 1px solid #454545; border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 40; font-size: 12px;
+    display: none;
+  }
+  .tweaks-panel.open { display: block; animation: fade-in 160ms ease-out; }
+
+  /* prevent text selection on chrome */
+  .no-select { user-select: none; -webkit-user-select: none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Tweakable defaults, persisted by host -->
+<script>
+window.__TWEAKS__ = /*EDITMODE-BEGIN*/{
+  "tone": "cool",
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/icons.jsx"></script>
+<script type="text/babel" src="src/sidebar.jsx"></script>
+<script type="text/babel" src="src/terminal.jsx"></script>
+<script type="text/babel" src="src/details.jsx"></script>
+<script type="text/babel" src="src/cmdk.jsx"></script>
+<script type="text/babel" src="src/tweaks.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>

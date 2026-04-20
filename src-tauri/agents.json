@@ -1,0 +1,202 @@
+{
+  "agents": [
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "mono": "CC",
+      "color": "var(--av-3)",
+      "detect": {
+        "osc_title_contains": [
+          "Claude Code"
+        ],
+        "screen_contains": [
+          "Claude Code v"
+        ]
+      },
+      "state": {
+        "thinking": {
+          "osc_title_prefix": [
+            "⠂",
+            "⠄",
+            "⠈"
+          ],
+          "screen_regex": [
+            "^[✢✳✶✻✽]\\s+.+…"
+          ]
+        },
+        "idle": {
+          "osc_title_prefix": [
+            "✳"
+          ],
+          "screen_regex": [
+            "^❯\\s*$",
+            "^❯ $"
+          ]
+        }
+      },
+      "chrome": [
+        "Context .* Usage .*%",
+        "^◉.*(/effort|xhigh|xlow)",
+        "Claude Code v\\d",
+        "Welcome back",
+        "Tips for getting started",
+        "No recent activity",
+        "Recent activity$",
+        "Imageinclipboard|ctrl\\+v",
+        "^[✢✳✶✻✽]\\s+\\S+…",
+        "^❯",
+        "\\d+ MCPs?$",
+        "organization",
+        "yes, i trust|no, exit",
+        "accessing workspace",
+        "quick safety check",
+        "be able to read, edit",
+        "security guide",
+        "enter to confirm",
+        "\\d+ MCPs?.*hooks?",
+        "\\d+ hooks?",
+        "Run /init to create",
+        "instructions for Claude",
+        "Opus \\d+\\.\\d+.*context",
+        "Claude Max",
+        "@gmail\\.com",
+        "^─+$",
+        "^›",
+        "^▸▸",
+        "^[○●◉◎]\\s*(Bash|Read|Write|Edit|Grep|Glob|Fetch)",
+        "✓ Read ×\\d+",
+        "✓ Bash ×\\d+",
+        "✓ Write ×\\d+",
+        "✓ Grep ×\\d+",
+        "Read ×\\d+.*Bash ×\\d+",
+        "\\d+ tokens.*thinking",
+        "ctrl\\+o to expand",
+        "drop image files"
+      ],
+      "reply_prefix": [
+        "● "
+      ],
+      "input_prefix": [
+        "❯ "
+      ],
+      "input_zone_after": "^─{10,}",
+      "hook": {
+        "type": "hooks_api",
+        "config_path": "~/.claude/settings.json",
+        "events": ["Stop", "PreToolUse", "PostToolUse", "Notification"]
+      }
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro CLI",
+      "mono": "KR",
+      "color": "var(--av-2)",
+      "detect": {
+        "screen_contains": [
+          "Kiro · auto",
+          "Welcome to the new Kiro CLI",
+          "kiro-cli --classic"
+        ]
+      },
+      "state": {
+        "thinking": {
+          "screen_regex": [
+            "Thinking\\.\\.\\.",
+            "Kiro is working"
+          ]
+        },
+        "idle": {
+          "screen_regex": [
+            "^Kiro · "
+          ]
+        }
+      },
+      "chrome": [
+        "/copy to clipboard",
+        "ask a question or describe a task",
+        "^Kiro · ",
+        "^Kiro ·$",
+        "Kiro is working",
+        "▸ Credits:.*Time:",
+        "MCP failure",
+        "Welcome to the new Kiro",
+        "Prefer the classic experience",
+        "/tui to learn more",
+        "Thinking\\.\\.\\. \\(esc",
+        "● Initializing",
+        "● \\d+ MCP failure",
+        "^● Shell ",
+        "^● Read ",
+        "^● Write ",
+        "^● Edit ",
+        "^● Bash ",
+        "^● Grep ",
+        "^● Glob ",
+        "^● Fetch ",
+        "^● Tasks updated",
+        "^─{10,}",
+        "ctrl\\+o to toggle"
+      ],
+      "reply_prefix": [],
+      "input_prefix": [],
+      "input_zone_after": "^Kiro · ",
+      "hook": {
+        "type": "hooks_api",
+        "config_path": "~/.kiro/settings.json",
+        "events": ["Stop", "PreToolUse", "PostToolUse", "Notification"]
+      }
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "mono": "CX",
+      "color": "var(--av-4)",
+      "detect": {
+        "screen_contains": [
+          "OpenAI Codex",
+          ">_ OpenAI"
+        ]
+      },
+      "state": {
+        "thinking": {
+          "screen_regex": [
+            "• Working \\(",
+            "• Starting MCP"
+          ]
+        },
+        "idle": {
+          "screen_regex": [
+            "^› $",
+            "gpt-.*xhigh.*~/"
+          ]
+        }
+      },
+      "chrome": [
+        ">_ OpenAI Codex",
+        "model:.*gpt-.*(/model|xhigh)",
+        "directory:",
+        "/skills to list",
+        "gpt-.*xhigh.*~/",
+        "^Tip:",
+        "^⚠",
+        "• Working \\(",
+        "• Starting MCP",
+        "• Explored$",
+        "^  └",
+        "› Implement \\{",
+        "esc to interrupt"
+      ],
+      "reply_prefix": [
+        "• "
+      ],
+      "input_prefix": [
+        "› "
+      ],
+      "hook": {
+        "type": "notify",
+        "config_path": "~/.codex/config.toml",
+        "events": ["response", "tool_call", "tool_result"]
+      }
+    }
+  ]
+}
