@@ -47,14 +47,34 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 - **IPC**: Named Pipe (FIFO) 用于 hook → 应用通信
 - **主题**: 可配置，支持导入 macOS Terminal `.terminal` 配置
 
-## 快速开始
+## 安装
+
+### 一键安装（推荐）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
+```
+
+同时支持 Apple Silicon 和 Intel Mac（universal 通用二进制）。`curl` 不会像浏览器那样打 `com.apple.quarantine` 标签，所以未签名的 app 不会被 Gatekeeper 拦截。
+
+### 手动下载 DMG
+
+从 [Releases](https://github.com/chatterm/chatterm/releases) 下载 DMG。因为 ChatTerm 还没做代码签名，浏览器下载的 DMG 双击可能报「文件已损坏」。先剥掉 quarantine 标签：
+
+```bash
+xattr -cr ~/Downloads/ChatTerm_*.dmg
+```
+
+然后挂载并把 ChatTerm 拖到 `/Applications`。
+
+## 开发
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-## 构建安装
+## 从源码构建
 
 ```bash
 npm run tauri build
@@ -63,11 +83,40 @@ bash install.sh
 
 ## 配置 Agent Hooks
 
+脚本会把 hook 写到 `~/.chatterm/hook.sh`，并修改各 agent 的配置指向它。三种入口，选一个：
+
 ```bash
+# 通过 DMG / curl 安装后
+bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
+
+# 一键远程安装（同样可用）
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+
+# 从仓库直接跑
 bash scripts/setup-hooks.sh
 ```
 
-为 Claude Code（`~/.claude/settings.json`）、Kiro CLI（`~/.kiro/agents/chatterm.json`）和 Codex（`~/.codex/hooks.json`）配置 hooks，通过 FIFO 管道发送通知。
+三条路径效果一致：hook 统一落在 `~/.chatterm/hook.sh`，下列配置都引用它：
+
+| Agent | 配置文件 | 生效方式 |
+|---|---|---|
+| Claude Code | `~/.claude/settings.json` | **全局生效** —— 重启 Claude Code |
+| Codex | `~/.codex/hooks.json` + `config.toml` | **全局生效** —— 重启 Codex |
+| Kiro CLI | `~/.kiro/agents/chatterm.json` | **按 agent 生效** —— 见下文 |
+
+### 激活 Kiro CLI 的 hooks
+
+Kiro CLI 从**当前激活的 agent 配置**读 hooks，不是全局的。跑完 `setup-hooks.sh` 后，需要切到 `chatterm` agent：
+
+```bash
+# 用 chatterm agent 启动新会话：
+kiro-cli chat --agent chatterm
+
+# 已有会话中切换：
+/agent swap chatterm
+```
+
+想让 `chatterm` 成为 Kiro 的默认 agent，可以改 `~/.kiro/settings.json`，或者设个 shell 别名：`alias kiro-cli='kiro-cli chat --agent chatterm'`。
 
 ## 快捷键
 
@@ -98,9 +147,9 @@ src-tauri/src/              # 后端 (Rust)
 ├── session.rs              # 会话元数据持久化
 └── main.rs                 # 入口
 
-scripts/                    # Hook 脚本
-├── chatterm-hook.sh        # Hook → FIFO 桥接（所有 Agent）
-└── setup-hooks.sh          # 一键安装 hooks
+scripts/                    # 安装 + hook 脚本
+├── install-remote.sh       # 一键 curl 远程安装
+└── setup-hooks.sh          # Agent hook 安装器（写入 ~/.chatterm/hook.sh）
 
 design/                     # 设计资源
 ├── logo/                   # Logo 导出（v3、v4，6 个变体）

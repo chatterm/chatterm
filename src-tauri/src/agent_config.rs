@@ -162,13 +162,10 @@ pub fn detect_agent(title: Option<&str>, content: &str) -> Option<&'static Agent
         for a in agents { if a.detect_from_title(t) { return Some(a); } }
     }
     // Kiro first (before Claude, since Kiro output might mention "claude")
-    for a in agents {
-        if a.id == "kiro" && a.detect_from_content(content) { return Some(a); }
+    if let Some(a) = agents.iter().find(|a| a.id == "kiro" && a.detect_from_content(content)) {
+        return Some(a);
     }
-    for a in agents {
-        if a.id != "kiro" && a.detect_from_content(content) { return Some(a); }
-    }
-    None
+    agents.iter().find(|a| a.id != "kiro" && a.detect_from_content(content))
 }
 
 #[cfg(test)]
@@ -195,6 +192,10 @@ mod tests {
         let agents = agents();
         let codex = agents.iter().find(|a| a.id == "codex").unwrap();
         assert_eq!(codex.detect_state_from_screen(&["• Working (0s • esc to interrupt)".to_string()]), Some("thinking"));
+        // Codex animates the status glyph (●/○/◦/•); regex is substring-match so any prefix works
+        assert_eq!(codex.detect_state_from_screen(&["◦ Waiting for background terminal (1m 21s • esc to interrupt)".to_string()]), Some("thinking"));
+        assert_eq!(codex.detect_state_from_screen(&["● Waiting for background terminal (2m 10s)".to_string()]), Some("thinking"));
+        assert_eq!(codex.detect_state_from_screen(&["Waiting for background terminal (1m 21s)".to_string()]), Some("thinking"));
         assert_eq!(codex.detect_state_from_screen(&["gpt-5.4 xhigh · ~/project".to_string()]), Some("idle"));
     }
 }

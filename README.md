@@ -47,14 +47,34 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 - **IPC**: Named Pipe (FIFO) for hook → app communication
 - **Theme**: Configurable, imports macOS Terminal `.terminal` profiles
 
-## Quick Start
+## Install
+
+### One-line install (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
+```
+
+Works on Apple Silicon and Intel Macs (universal binary). Since `curl` doesn't apply the `com.apple.quarantine` attribute that browsers add, the unsigned app launches without Gatekeeper warnings.
+
+### Manual DMG download
+
+Grab the DMG from [Releases](https://github.com/chatterm/chatterm/releases). Because ChatTerm is not yet code-signed, double-clicking a browser-downloaded DMG may fail with "ChatTerm is damaged". Strip the quarantine attribute first:
+
+```bash
+xattr -cr ~/Downloads/ChatTerm_*.dmg
+```
+
+Then open the DMG and drag ChatTerm to `/Applications`.
+
+## Development
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-## Build & Install
+## Build from source
 
 ```bash
 npm run tauri build
@@ -63,11 +83,40 @@ bash install.sh
 
 ## Setup Agent Hooks
 
+The hook installer writes `~/.chatterm/hook.sh` and wires it into each agent's config. Pick whichever entry point matches your install:
+
 ```bash
+# Installed via DMG / curl
+bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
+
+# Installed via one-line curl (also works)
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+
+# Running from a repo checkout
 bash scripts/setup-hooks.sh
 ```
 
-Configures hooks for Claude Code (`~/.claude/settings.json`), Kiro CLI (`~/.kiro/agents/chatterm.json`), and Codex (`~/.codex/hooks.json`) to send notifications via FIFO pipe.
+All three entry points produce the same result: the hook lives at `~/.chatterm/hook.sh`, and the following configs reference that stable path:
+
+| Agent | Config file | Activation |
+|---|---|---|
+| Claude Code | `~/.claude/settings.json` | Applies globally — restart Claude Code |
+| Codex | `~/.codex/hooks.json` + `config.toml` | Applies globally — restart Codex |
+| Kiro CLI | `~/.kiro/agents/chatterm.json` | **Per-agent** — see below |
+
+### Activating the Kiro CLI hooks
+
+Kiro CLI loads hooks from the **active agent profile**, not globally. After running `setup-hooks.sh`, switch to the `chatterm` agent:
+
+```bash
+# Start a new Kiro session with the chatterm agent:
+kiro-cli chat --agent chatterm
+
+# Or inside an existing session:
+/agent swap chatterm
+```
+
+To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settings.json` (or create a shell alias: `alias kiro-cli='kiro-cli chat --agent chatterm'`).
 
 ## Keyboard Shortcuts
 
@@ -98,9 +147,9 @@ src-tauri/src/              # Backend (Rust)
 ├── session.rs              # Session metadata persistence
 └── main.rs                 # Entry point
 
-scripts/                    # Hook scripts
-├── chatterm-hook.sh        # Hook → FIFO bridge (all agents)
-└── setup-hooks.sh          # One-click hook installation
+scripts/                    # Install + hook scripts
+├── install-remote.sh       # One-line curl installer
+└── setup-hooks.sh          # Agent hook installer (writes ~/.chatterm/hook.sh)
 
 design/                     # Design assets
 ├── logo/                   # Logo exports (v3, v4, 6 variants)

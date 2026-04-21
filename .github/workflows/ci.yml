@@ -57,6 +57,8 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -66,11 +68,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        run: npx tauri build
+      - name: Build Tauri app (universal)
+        run: npx tauri build --target universal-apple-darwin
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ChatTerm-macos
-          path: src-tauri/target/release/bundle/macos/ChatTerm.app
+          path: src-tauri/target/universal-apple-darwin/release/bundle/macos/ChatTerm.app

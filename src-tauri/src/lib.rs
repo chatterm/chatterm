@@ -4,7 +4,7 @@ pub mod agent_config;
 pub mod theme;
 pub mod session;
 
-use pty::{PtyManager, PtyMeta, PtyOutput};
+use pty::{CreateSessionRequest, PtyManager, PtyMeta, PtyOutput};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
@@ -58,7 +58,14 @@ fn load_sessions() -> Vec<session::SessionMeta> {
 fn create_session(app: AppHandle, state: tauri::State<'_, AppState>, id: String, cols: u16, rows: u16, command: Option<String>, cwd: Option<String>) -> Result<(), String> {
     let h1 = app.clone();
     let h2 = app.clone();
-    state.pty_mgr.create_session(&id, cols, rows, command.as_deref(), cwd.as_deref(),
+    let req = CreateSessionRequest {
+        id: &id,
+        cols,
+        rows,
+        command: command.as_deref(),
+        cwd: cwd.as_deref(),
+    };
+    state.pty_mgr.create_session(req,
         move |o: PtyOutput| { h1.emit("pty-output", &o).ok(); },
         move |m: PtyMeta| { h2.emit("pty-meta", &m).ok(); },
     )

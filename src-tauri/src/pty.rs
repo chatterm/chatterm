@@ -46,6 +46,14 @@ pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 }
 
+pub struct CreateSessionRequest<'a> {
+    pub id: &'a str,
+    pub cols: u16,
+    pub rows: u16,
+    pub command: Option<&'a str>,
+    pub cwd: Option<&'a str>,
+}
+
 impl PtyManager {
     pub fn new() -> Self {
         Self {
@@ -55,19 +63,15 @@ impl PtyManager {
 
     pub fn create_session(
         &self,
-        id: &str,
-        cols: u16,
-        rows: u16,
-        command: Option<&str>,
-        cwd: Option<&str>,
+        req: CreateSessionRequest<'_>,
         on_output: impl Fn(PtyOutput) + Send + 'static,
         on_meta: impl Fn(PtyMeta) + Send + 'static,
     ) -> Result<(), String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
-                rows,
-                cols,
+                rows: req.rows,
+                cols: req.cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
@@ -76,7 +80,7 @@ impl PtyManager {
         let shell = detect_shell();
         let mut cmd = CommandBuilder::new(&shell);
         cmd.arg("-l");
-        if let Some(c) = command {
+        if let Some(c) = req.command {
             cmd.args(["-c", c]);
         }
 
@@ -85,7 +89,7 @@ impl PtyManager {
             format!("/Users/{}", whoami())
         );
         cmd.env("HOME", &home);
-        let work_dir = cwd.unwrap_or(&home);
+        let work_dir = req.cwd.unwrap_or(&home);
         cmd.cwd(work_dir);
         cmd.env("USER", whoami());
         if let Ok(path) = std::env::var("PATH") {
@@ -97,7 +101,7 @@ impl PtyManager {
             cmd.env("PATH", full_path);
         }
         cmd.env("TERM", "xterm-256color");
-        cmd.env("CHATTERM_SESSION_ID", id);
+        cmd.env("CHATTERM_SESSION_ID", req.id);
 
         let child = pair
             .slave
@@ -109,7 +113,7 @@ impl PtyManager {
             .master
             .try_clone_reader()
             .map_err(|e| format!("Failed to clone reader: {e}"))?;
-        let session_id = id.to_string();
+        let session_id = req.id.to_string();
         thread::spawn(move || {
             let mut buf_reader = BufReader::new(reader);
             let mut buf = vec![0u8; 4096];
@@ -219,10 +223,10 @@ impl PtyManager {
                                     if t.is_empty() { continue; }
                                     // Extract dir name from prompt "user@host:~/path$" or "user@host:~/path$ cmd"
                                     let extract_dir = |s: &str| -> Option<String> {
-                                        let clean = s.trim_end_matches(|c: char| c == '$' || c == '%' || c == ' ');
+                                        let clean = s.trim_end_matches(['$', '%', ' ']);
                                         clean.rfind(':').map(|i| {
                                             let path = &clean[i+1..];
-                                            path.split('/').last().unwrap_or(path).to_string()
+                                            path.split('/').next_back().unwrap_or(path).to_string()
                                         }).filter(|d| !d.is_empty())
                                     };
                                     // Prompt with command
@@ -323,7 +327,7 @@ impl PtyManager {
         let session = PtySession {
             master_write: Arc::new(Mutex::new(master_write)),
             master_pty: Some(pair.master),
-            id: id.to_string(),
+            id: req.id.to_string(),
             _child: Some(child),
             _process: None,
         };
@@ -331,7 +335,7 @@ impl PtyManager {
         self.sessions
             .lock()
             .unwrap()
-            .insert(id.to_string(), session);
+            .insert(req.id.to_string(), session);
         Ok(())
     }
 
@@ -391,7 +395,7 @@ fn extract_osc99(data: &str) -> Option<PtyNotification> {
     if let Some(start) = data.find(marker) {
         let rest = &data[start + marker.len()..];
         // Find terminator: either \x07 or \x1b\\
-        let end = rest.find('\x07').or_else(|| rest.find("\x1b\\").map(|i| i));
+        let end = rest.find('\x07').or_else(|| rest.find("\x1b\\"));
         if let Some(end) = end {
             let payload = &rest[..end];
             // Extract after the last ':'
@@ -421,7 +425,7 @@ fn detect_agent_command(agent: Option<&str>) -> Option<String> {
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
         let trimmed = line.trim();
-        let base = trimmed.split('/').last().unwrap_or(trimmed);
+        let base = trimmed.split('/').next_back().unwrap_or(trimmed);
         if base.starts_with(bin) && !trimmed.contains("hook") && !trimmed.contains("ps ") {
             // Clean up: "node /opt/homebrew/bin/codex --foo" → "codex --foo"
             //           "/Users/x/.local/bin/claude --foo" → "claude --foo"
@@ -433,7 +437,7 @@ fn detect_agent_command(agent: Option<&str>) -> Option<String> {
             }
             // Replace full path with just binary name
             if let Some(cmd_part) = parts.get(start) {
-                let cmd_base = cmd_part.split('/').last().unwrap_or(cmd_part);
+                let cmd_base = cmd_part.split('/').next_back().unwrap_or(cmd_part);
                 let _args: Vec<&str> = parts[start+1..].iter()
                     .filter(|a| !a.starts_with("--session-id") && !a.starts_with("--settings"))
                     .copied().collect();
@@ -474,7 +478,7 @@ fn detect_agent_cwd(agent: Option<&str>) -> Option<String> {
         let trimmed = line.trim();
         let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
         if parts.len() < 2 { continue; }
-        let base = parts[1].split('/').last().unwrap_or(parts[1]);
+        let base = parts[1].split('/').next_back().unwrap_or(parts[1]);
         if base.starts_with(bin) && !parts[1].contains("hook") {
             let pid = parts[0].trim();
             // lsof -a -p PID -d cwd: -a means AND all conditions
@@ -524,7 +528,7 @@ fn detect_shell() -> String {
         .output()
     {
         let s = String::from_utf8_lossy(&out.stdout);
-        if let Some(shell) = s.split_whitespace().last() {
+        if let Some(shell) = s.split_whitespace().next_back() {
             if std::path::Path::new(shell).exists() { return shell.to_string(); }
         }
     }

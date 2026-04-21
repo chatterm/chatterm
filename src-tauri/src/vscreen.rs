@@ -1,6 +1,6 @@
-/// Virtual screen buffer: feeds PTY output through a VTE parser,
-/// maintains a grid of characters, and allows reading screen content
-/// for extracting meaningful text from TUI applications.
+//! Virtual screen buffer: feeds PTY output through a VTE parser,
+//! maintains a grid of characters, and allows reading screen content
+//! for extracting meaningful text from TUI applications.
 
 use vte::{Params, Parser, Perform};
 
@@ -72,7 +72,7 @@ impl Perform for ScreenInner {
                 }
             }
             b'\r' => { self.cursor_col = 0; }
-            b'\x08' => { if self.cursor_col > 0 { self.cursor_col -= 1; } } // backspace
+            b'\x08' if self.cursor_col > 0 => { self.cursor_col -= 1; } // backspace
             _ => {}
         }
     }
@@ -130,6 +130,12 @@ impl Perform for ScreenInner {
     fn put(&mut self, _byte: u8) {}
     fn unhook(&mut self) {}
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
+}
+
+impl Default for VScreen {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VScreen {
