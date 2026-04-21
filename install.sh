@@ -1,6 +1,10 @@
 #!/bin/bash
 # Install ChatTerm to /Applications
 set -e
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "This installer is for macOS. On Linux, run: scripts/install-linux.sh"
+  exit 1
+fi
 APP="src-tauri/target/release/bundle/macos/ChatTerm.app"
 DEST="/Applications/ChatTerm.app"
 

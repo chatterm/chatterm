@@ -91,8 +91,8 @@ function LineContent({ line }: { line: OutputLine }) {
     );
   }
   if (line.t === "ask") return (
-    <div style={{ ...base, padding: "8px 10px", margin: "6px 0", background: "rgba(220,220,170,0.08)", borderLeft: "3px solid var(--status-waiting)", borderRadius: 4 }}>
-      <div style={{ color: "var(--status-waiting)", fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ ...base, padding: "8px 10px", margin: "6px 0", background: "rgba(220,220,170,0.08)", borderLeft: "3px solid var(--ansi-yellow)", borderRadius: 4 }}>
+      <div style={{ color: "var(--ansi-yellow)", fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 10, padding: "1px 5px", background: "rgba(220,220,170,0.18)", borderRadius: 3 }}>NEEDS YOU</span>
         {line.text}
       </div>

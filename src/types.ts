@@ -1,5 +1,5 @@
 export type SessionKind = "shell" | "agent" | "process" | "ssh" | "group" | "ci" | "hook";
-export type SessionStatus = "running" | "waiting" | "done" | "error" | "idle";
+export type SessionStatus = "running" | "done" | "error" | "idle";
 
 export interface SessionAvatar { mono: string; color: string; group?: boolean; }
 
@@ -52,11 +52,11 @@ export const AVATAR_COLORS = [
 ];
 
 export function statusColor(s: SessionStatus): string {
-  return ({ running: "var(--status-running)", waiting: "var(--status-waiting)", error: "var(--status-error)", done: "var(--status-done)", idle: "var(--status-idle)" } as Record<string, string>)[s] || "var(--status-idle)";
+  return ({ running: "var(--status-running)", error: "var(--status-error)", done: "var(--status-done)", idle: "var(--status-idle)" } as Record<string, string>)[s] || "var(--status-idle)";
 }
 
 export function statusLabel(s: SessionStatus): string {
-  return ({ running: "Running", waiting: "Awaiting you", error: "Error", done: "Done", idle: "Idle" } as Record<string, string>)[s] || s;
+  return ({ running: "Running", error: "Error", done: "Done", idle: "Idle" } as Record<string, string>)[s] || s;
 }
 
 export function relTime(ts: number): string {

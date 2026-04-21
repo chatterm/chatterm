@@ -161,7 +161,8 @@
         "thinking": {
           "screen_regex": [
             "• Working \\(",
-            "• Starting MCP"
+            "• Starting MCP",
+            "Waiting for background terminal"
           ]
         },
         "idle": {
@@ -181,6 +182,7 @@
         "^⚠",
         "• Working \\(",
         "• Starting MCP",
+        "Waiting for background terminal",
         "• Explored$",
         "^  └",
         "› Implement \\{",

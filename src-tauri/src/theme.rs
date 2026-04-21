@@ -39,19 +39,25 @@ pub struct ThemeColors {
 /// Parse a .terminal plist file and extract theme colors
 pub fn parse_terminal_file(path: &str) -> Result<ThemeColors, String> {
     let val = Value::from_file(path).map_err(|e| format!("Failed to read plist: {e}"))?;
-    let dict = val.as_dictionary().ok_or("Invalid .terminal file: not a dictionary")?;
+    let dict = val
+        .as_dictionary()
+        .ok_or("Invalid .terminal file: not a dictionary")?;
 
-    let name = dict.get("name")
+    let name = dict
+        .get("name")
         .and_then(|v| v.as_string())
         .unwrap_or_else(|| {
-            Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("Imported")
+            Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Imported")
         })
         .to_string();
 
     let get = |key: &str, fallback: &str| -> String {
         dict.get(key)
             .and_then(|v| v.as_data())
-            .and_then(|data| parse_nscolor(data))
+            .and_then(parse_nscolor)
             .unwrap_or_else(|| fallback.to_string())
     };
 
@@ -90,7 +96,9 @@ fn parse_nscolor(data: &[u8]) -> Option<String> {
         if let Some(d) = item.as_dictionary() {
             // Grayscale: NSWhite
             if let Some(w) = d.get("NSWhite").and_then(|v| v.as_data()) {
-                let s = String::from_utf8_lossy(w).trim_end_matches('\0').to_string();
+                let s = String::from_utf8_lossy(w)
+                    .trim_end_matches('\0')
+                    .to_string();
                 if let Ok(v) = s.trim().parse::<f64>() {
                     let c = (v * 255.0).round() as u8;
                     return Some(format!("#{:02x}{:02x}{:02x}", c, c, c));
@@ -110,8 +118,11 @@ fn parse_nscolor(data: &[u8]) -> Option<String> {
 }
 
 fn parse_rgb_components(data: &[u8]) -> Option<String> {
-    let s = String::from_utf8_lossy(data).trim_end_matches('\0').to_string();
-    let parts: Vec<f64> = s.split_whitespace()
+    let s = String::from_utf8_lossy(data)
+        .trim_end_matches('\0')
+        .to_string();
+    let parts: Vec<f64> = s
+        .split_whitespace()
         .filter_map(|p| p.parse().ok())
         .collect();
     if parts.len() >= 3 {
@@ -125,6 +136,7 @@ fn parse_rgb_components(data: &[u8]) -> Option<String> {
 }
 
 /// List .terminal theme files from macOS Terminal's preferences
+#[cfg(target_os = "macos")]
 pub fn list_system_themes() -> Vec<String> {
     let home = std::env::var("HOME").unwrap_or_default();
     let plist_path = format!("{}/Library/Preferences/com.apple.Terminal.plist", home);
@@ -145,24 +157,35 @@ pub fn list_system_themes() -> Vec<String> {
     profiles.keys().cloned().collect()
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn list_system_themes() -> Vec<String> {
+    Vec::new()
+}
+
 /// Export a theme from macOS Terminal preferences by name
+#[cfg(target_os = "macos")]
 pub fn export_system_theme(name: &str) -> Result<ThemeColors, String> {
     let home = std::env::var("HOME").unwrap_or_default();
     let plist_path = format!("{}/Library/Preferences/com.apple.Terminal.plist", home);
 
-    let val = Value::from_file(&plist_path).map_err(|e| format!("Cannot read Terminal prefs: {e}"))?;
-    let profiles = val.as_dictionary()
+    let val =
+        Value::from_file(&plist_path).map_err(|e| format!("Cannot read Terminal prefs: {e}"))?;
+    let profiles = val
+        .as_dictionary()
         .and_then(|d| d.get("Window Settings"))
         .and_then(|v| v.as_dictionary())
         .ok_or("Cannot find Window Settings")?;
 
-    let profile = profiles.get(name).and_then(|v| v.as_dictionary())
+    let profile = profiles
+        .get(name)
+        .and_then(|v| v.as_dictionary())
         .ok_or_else(|| format!("Theme '{}' not found", name))?;
 
     let get = |key: &str, fallback: &str| -> String {
-        profile.get(key)
+        profile
+            .get(key)
             .and_then(|v| v.as_data())
-            .and_then(|data| parse_nscolor(data))
+            .and_then(parse_nscolor)
             .unwrap_or_else(|| fallback.to_string())
     };
 
@@ -189,4 +212,9 @@ pub fn export_system_theme(name: &str) -> Result<ThemeColors, String> {
         bright_cyan: get("ANSIBrightCyanColor", "#00ffff"),
         bright_white: get("ANSIBrightWhiteColor", "#ffffff"),
     })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn export_system_theme(_name: &str) -> Result<ThemeColors, String> {
+    Err("System Terminal theme import is only available on macOS".to_string())
 }
