@@ -49,41 +49,93 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 
 ## 安装
 
-### 一键安装（macOS 和 Debian/Ubuntu）
+ChatTerm 本体只是一个二进制；侧边栏的回复预览和思考/空闲指示还需要额外配**Agent Hooks**。先看下一节"hook 工作原理"，再按场景选一种安装方式——每种方式下面都把安装命令和对应的 hook 配置命令写在一起了。
+
+### Agent Hooks 工作原理
+
+Claude Code、Kiro CLI、Codex 都支持在 `Stop`、`PreToolUse`、`PostToolUse` 等事件上挂用户自定义命令。ChatTerm 就是靠这些 hook 来更新侧边栏的预览和状态点。
+
+`setup-hooks.sh` 做两件事：
+
+1. 把一个 Python hook 脚本写到稳定路径 `~/.chatterm/hook.sh`。它从 stdin 读事件 JSON，往 `~/.chatterm/hook.pipe` FIFO 写一条短消息，ChatTerm 的 Rust 后端读管道更新 UI。写 FIFO 用 `O_NONBLOCK`，**ChatTerm 没开时直接丢消息不会卡住 agent**。
+2. 修改各 agent 的配置文件指向 `~/.chatterm/hook.sh`：
+
+    | Agent | 配置文件 | 生效方式 |
+    |---|---|---|
+    | Claude Code | `~/.claude/settings.json` | 全局 —— 重启 Claude Code |
+    | Codex | `~/.codex/hooks.json` + `config.toml` | 全局 —— 重启 Codex |
+    | Kiro CLI | `~/.kiro/agents/chatterm.json` | **按 agent** —— 见 [激活 Kiro CLI hooks](#激活-kiro-cli-hooks) |
+
+安装器是幂等的：重复跑会刷新过期的 ChatTerm 条目，不动其他 hook。
+
+---
+
+### 方式一 —— 一键安装（macOS 和 Debian/Ubuntu）
 
 ```bash
+# 1. 安装 App（自动识别 macOS 还是 Linux）
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
+
+# 2. 配 agent hooks
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 ```
 
-脚本自动检测系统：
+**macOS** 下拉 universal DMG（arm64 + x86_64），把 `ChatTerm.app` 拷到 `/Applications`。用 `curl` 下载避开了浏览器打的 `com.apple.quarantine` 标签，未签名的 app 不会被 Gatekeeper 拦截。
 
-- **macOS**：下载 universal DMG（arm64 + x86_64），把 `ChatTerm.app` 复制到 `/Applications`。`curl` 不会像浏览器那样打 `com.apple.quarantine` 标签，所以未签名的 app 不会被 Gatekeeper 拦截。
-- **Debian / Ubuntu**：下载匹配架构的 `.deb`，用 `sudo dpkg -i` + `sudo apt-get install -f` 安装（会弹 sudo 密码提示）。
+**Debian / Ubuntu** 下拉匹配架构的 `.deb`，跑 `sudo dpkg -i` + `sudo apt-get install -f`（会弹 sudo 密码）。
 
-### 手动下载
+### 方式二 —— 手动下载
 
-到 [Releases](https://github.com/chatterm/chatterm/releases) 选资产：
+到 [Releases](https://github.com/chatterm/chatterm/releases) 选对应资产。
 
-- **macOS DMG** —— 因为 ChatTerm 还没做代码签名，浏览器下载的 DMG 双击可能报「文件已损坏」。先剥掉 quarantine 标签：
-  ```bash
-  xattr -cr ~/Downloads/ChatTerm_*.dmg
-  ```
-  然后挂载并把 ChatTerm 拖到 `/Applications`。
-- **Ubuntu `.deb`**：
-  ```bash
-  sudo dpkg -i ./chatterm_*.deb
-  sudo apt-get install -f
-  ```
-- **其他 Linux（`.AppImage`）**：`chmod +x` 后直接运行。
-
-## 开发
+**macOS DMG** —— ChatTerm 未代码签名，浏览器下载的 DMG 双击会报「文件已损坏」。先剥 quarantine：
 
 ```bash
+xattr -cr ~/Downloads/ChatTerm_*.dmg
+# 挂载 DMG，把 ChatTerm 拖到 /Applications，然后：
+bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
+```
+
+**Debian / Ubuntu `.deb`**：
+
+```bash
+sudo dpkg -i ./chatterm_*.deb
+sudo apt-get install -f
+bash /usr/lib/chatterm/resources/setup-hooks.sh
+```
+
+**其他 Linux（`.AppImage`）**：
+
+```bash
+chmod +x ./ChatTerm_*.AppImage
+./ChatTerm_*.AppImage
+# AppImage 不自带 setup-hooks 资源，用远程方式：
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+```
+
+### 方式三 —— 从源码构建
+
+```bash
+git clone https://github.com/chatterm/chatterm.git && cd chatterm
 npm install
+
+# macOS
+npm run tauri build && bash install.sh
+
+# Debian / Ubuntu
+npm run tauri -- build --bundles deb,appimage && bash scripts/install-linux.sh
+
+# 配 hook（两个平台一样）
+bash scripts/setup-hooks.sh
+```
+
+开发模式（Vite + Tauri dev 服务器）：
+
+```bash
 npm run tauri dev
 ```
 
-### Ubuntu 开发依赖
+**Ubuntu 开发依赖**（第一次跑 `tauri dev` / `tauri build` 前装一次）：
 
 ```bash
 sudo apt-get update
@@ -93,49 +145,9 @@ sudo apt-get install -y \
   libayatana-appindicator3-dev librsvg2-dev
 ```
 
-## 从源码构建
+### 激活 Kiro CLI hooks
 
-```bash
-npm run tauri build
-bash install.sh
-```
-
-Ubuntu/Linux：
-
-```bash
-npm run tauri -- build --bundles deb,appimage
-bash scripts/install-linux.sh
-```
-
-## 配置 Agent Hooks
-
-脚本会把 hook 写到 `~/.chatterm/hook.sh`，并修改各 agent 的配置指向它。三种入口，选一个：
-
-```bash
-# 跨平台（macOS 和 Linux 都可用）
-curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
-
-# 通过 DMG / curl 在 macOS 安装后
-bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
-
-# 通过 .deb 在 Debian/Ubuntu 安装后
-bash /usr/lib/chatterm/resources/setup-hooks.sh
-
-# 从仓库直接跑
-bash scripts/setup-hooks.sh
-```
-
-这些入口效果一致：hook 统一落在 `~/.chatterm/hook.sh`，下列配置都引用它：
-
-| Agent | 配置文件 | 生效方式 |
-|---|---|---|
-| Claude Code | `~/.claude/settings.json` | **全局生效** —— 重启 Claude Code |
-| Codex | `~/.codex/hooks.json` + `config.toml` | **全局生效** —— 重启 Codex |
-| Kiro CLI | `~/.kiro/agents/chatterm.json` | **按 agent 生效** —— 见下文 |
-
-### 激活 Kiro CLI 的 hooks
-
-Kiro CLI 从**当前激活的 agent 配置**读 hooks，不是全局的。跑完 `setup-hooks.sh` 后，需要切到 `chatterm` agent：
+Kiro CLI 从**当前激活的 agent 配置**读 hooks，不是全局。`setup-hooks.sh` 跑完后要切到 `chatterm` agent：
 
 ```bash
 # 用 chatterm agent 启动新会话：
@@ -145,7 +157,7 @@ kiro-cli chat --agent chatterm
 /agent swap chatterm
 ```
 
-想让 `chatterm` 成为 Kiro 的默认 agent，可以改 `~/.kiro/settings.json`，或者设个 shell 别名：`alias kiro-cli='kiro-cli chat --agent chatterm'`。
+想让 `chatterm` 成为默认 agent，改 `~/.kiro/settings.json`，或者设个 shell 别名：`alias kiro-cli='kiro-cli chat --agent chatterm'`。
 
 ## 快捷键
 
@@ -206,4 +218,4 @@ design/                     # 设计资源
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)

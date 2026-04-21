@@ -49,41 +49,93 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 
 ## Install
 
-### One-line install (macOS and Debian/Ubuntu)
+ChatTerm itself is one binary; to get the sidebar's reply previews and thinking/idle indicators you also need **agent hooks** wired up. Read the next section once, then pick an install option — each option shows its install command and the matching hook-setup command together.
+
+### How agent hooks work
+
+Claude Code, Kiro CLI, and Codex each fire user-defined commands on events like `Stop`, `PreToolUse`, `PostToolUse`. ChatTerm plugs into those hooks to know when to update the sidebar preview and status dot.
+
+The installer (`setup-hooks.sh`) does two things:
+
+1. Writes a single Python hook to the stable path `~/.chatterm/hook.sh`. It reads the event JSON on stdin and writes a short message to a FIFO at `~/.chatterm/hook.pipe`. ChatTerm's Rust backend reads the FIFO and updates the session UI. The hook uses `O_NONBLOCK` on the FIFO, so if ChatTerm is not running it simply drops the message and does not block the agent.
+2. Patches each agent's config file to point at `~/.chatterm/hook.sh`:
+
+    | Agent | Config file | Activation |
+    |---|---|---|
+    | Claude Code | `~/.claude/settings.json` | Global — restart Claude Code |
+    | Codex | `~/.codex/hooks.json` + `config.toml` | Global — restart Codex |
+    | Kiro CLI | `~/.kiro/agents/chatterm.json` | **Per-agent** — see [Activating Kiro CLI hooks](#activating-kiro-cli-hooks) |
+
+The installer is idempotent: re-running it refreshes stale ChatTerm entries and leaves unrelated hooks alone.
+
+---
+
+### Option 1 — One-line install (macOS and Debian/Ubuntu)
 
 ```bash
+# 1. Install the app (auto-detects macOS vs Linux)
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
+
+# 2. Register agent hooks
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
 ```
 
-The installer auto-detects the OS:
+On **macOS** the installer grabs the universal DMG (arm64 + x86_64) and copies `ChatTerm.app` to `/Applications`. Using `curl` avoids the `com.apple.quarantine` attribute a browser would add, so the unsigned app launches without Gatekeeper warnings.
 
-- **macOS**: downloads the universal DMG (arm64 + x86_64) and copies `ChatTerm.app` to `/Applications`. Since `curl` doesn't apply the `com.apple.quarantine` attribute that browsers add, the unsigned app launches without Gatekeeper warnings.
-- **Debian / Ubuntu**: downloads the arch-matching `.deb` and installs via `sudo dpkg -i` + `sudo apt-get install -f` (will prompt for sudo password).
+On **Debian / Ubuntu** the installer grabs the arch-matching `.deb` and runs `sudo dpkg -i` + `sudo apt-get install -f` (it will prompt for the sudo password).
 
-### Manual download
+### Option 2 — Manual download
 
-Pick an asset from [Releases](https://github.com/chatterm/chatterm/releases):
+Pick an asset from [Releases](https://github.com/chatterm/chatterm/releases) and run the corresponding commands.
 
-- **macOS DMG** — because ChatTerm is not yet code-signed, a browser-downloaded DMG may fail with "ChatTerm is damaged" on double-click. Strip quarantine first:
-  ```bash
-  xattr -cr ~/Downloads/ChatTerm_*.dmg
-  ```
-  Then open the DMG and drag ChatTerm to `/Applications`.
-- **Ubuntu `.deb`**:
-  ```bash
-  sudo dpkg -i ./chatterm_*.deb
-  sudo apt-get install -f
-  ```
-- **Other Linux (`.AppImage`)**: `chmod +x` and run directly.
-
-## Development
+**macOS DMG** — because ChatTerm is not yet code-signed, a browser-downloaded DMG may fail with "ChatTerm is damaged". Strip the quarantine attribute first:
 
 ```bash
+xattr -cr ~/Downloads/ChatTerm_*.dmg
+# open the DMG, drag ChatTerm to /Applications, then:
+bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
+```
+
+**Debian / Ubuntu `.deb`**:
+
+```bash
+sudo dpkg -i ./chatterm_*.deb
+sudo apt-get install -f
+bash /usr/lib/chatterm/resources/setup-hooks.sh
+```
+
+**Other Linux (`.AppImage`)**:
+
+```bash
+chmod +x ./ChatTerm_*.AppImage
+./ChatTerm_*.AppImage
+# AppImage does not ship the setup-hooks resource; use the remote form:
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+```
+
+### Option 3 — Build from source (repo checkout)
+
+```bash
+git clone https://github.com/chatterm/chatterm.git && cd chatterm
 npm install
+
+# macOS
+npm run tauri build && bash install.sh
+
+# Debian / Ubuntu
+npm run tauri -- build --bundles deb,appimage && bash scripts/install-linux.sh
+
+# Hook setup (same for both)
+bash scripts/setup-hooks.sh
+```
+
+For live development (Vite + Tauri dev server):
+
+```bash
 npm run tauri dev
 ```
 
-### Ubuntu development dependencies
+**Ubuntu dev dependencies** (install once before `tauri dev` / `tauri build`):
 
 ```bash
 sudo apt-get update
@@ -93,47 +145,7 @@ sudo apt-get install -y \
   libayatana-appindicator3-dev librsvg2-dev
 ```
 
-## Build from source
-
-```bash
-npm run tauri build
-bash install.sh
-```
-
-On Ubuntu/Linux:
-
-```bash
-npm run tauri -- build --bundles deb,appimage
-bash scripts/install-linux.sh
-```
-
-## Setup Agent Hooks
-
-The hook installer writes `~/.chatterm/hook.sh` and wires it into each agent's config. Pick whichever entry point matches your install:
-
-```bash
-# Cross-platform (works on macOS and Linux)
-curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
-
-# Installed via DMG / curl on macOS
-bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
-
-# Installed via .deb on Debian/Ubuntu
-bash /usr/lib/chatterm/resources/setup-hooks.sh
-
-# Running from a repo checkout
-bash scripts/setup-hooks.sh
-```
-
-All entry points produce the same result: the hook lives at `~/.chatterm/hook.sh`, and the following configs reference that stable path:
-
-| Agent | Config file | Activation |
-|---|---|---|
-| Claude Code | `~/.claude/settings.json` | Applies globally — restart Claude Code |
-| Codex | `~/.codex/hooks.json` + `config.toml` | Applies globally — restart Codex |
-| Kiro CLI | `~/.kiro/agents/chatterm.json` | **Per-agent** — see below |
-
-### Activating the Kiro CLI hooks
+### Activating Kiro CLI hooks
 
 Kiro CLI loads hooks from the **active agent profile**, not globally. After running `setup-hooks.sh`, switch to the `chatterm` agent:
 
@@ -145,7 +157,7 @@ kiro-cli chat --agent chatterm
 /agent swap chatterm
 ```
 
-To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settings.json` (or create a shell alias: `alias kiro-cli='kiro-cli chat --agent chatterm'`).
+To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settings.json` (or alias: `alias kiro-cli='kiro-cli chat --agent chatterm'`).
 
 ## Keyboard Shortcuts
 
@@ -206,4 +218,4 @@ design/                     # Design assets
 
 ## License
 
-MIT
+[MIT](LICENSE)
