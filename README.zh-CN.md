@@ -159,6 +159,28 @@ kiro-cli chat --agent chatterm
 
 想让 `chatterm` 成为默认 agent，改 `~/.kiro/settings.json`，或者设个 shell 别名：`alias kiro-cli='kiro-cli chat --agent chatterm'`。
 
+### 推荐安装 Nerd Font
+
+如果你的 shell prompt 用了 Powerline / Devicon 图标（starship、powerlevel10k、oh-my-zsh 主题等），装一个 Nerd Font 才能正常显示图标，否则会是空方框。ChatTerm 的 xterm fontFamily 已经优先匹配常见 Nerd Font 家族，装了就自动生效。
+
+**Linux（Debian/Ubuntu）**
+
+```bash
+mkdir -p ~/.local/share/fonts
+cd /tmp
+wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip
+unzip -o JetBrainsMono.zip -d ~/.local/share/fonts/JetBrainsMonoNerd
+fc-cache -fv ~/.local/share/fonts
+```
+
+**macOS（Homebrew）**
+
+```bash
+brew install --cask font-jetbrains-mono-nerd-font
+```
+
+装完重启 ChatTerm。
+
 ## 快捷键
 
 | 按键 | 操作 |

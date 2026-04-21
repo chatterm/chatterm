@@ -159,6 +159,28 @@ kiro-cli chat --agent chatterm
 
 To make `chatterm` the default Kiro agent permanently, set it in `~/.kiro/settings.json` (or alias: `alias kiro-cli='kiro-cli chat --agent chatterm'`).
 
+### Recommended: install a Nerd Font
+
+If your shell prompt uses Powerline / Devicon glyphs (starship, powerlevel10k, oh-my-zsh themes, etc.), install a Nerd Font so those icons render instead of empty boxes. ChatTerm's xterm prefers Nerd Font variants automatically when one is available.
+
+**Linux (Debian/Ubuntu)**
+
+```bash
+mkdir -p ~/.local/share/fonts
+cd /tmp
+wget https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip
+unzip -o JetBrainsMono.zip -d ~/.local/share/fonts/JetBrainsMonoNerd
+fc-cache -fv ~/.local/share/fonts
+```
+
+**macOS (Homebrew)**
+
+```bash
+brew install --cask font-jetbrains-mono-nerd-font
+```
+
+Restart ChatTerm after install.
+
 ## Keyboard Shortcuts
 
 | Key | Action |

@@ -16,7 +16,13 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
 
   const term = new Terminal({
     fontSize: 14,
-    fontFamily: "Menlo, 'SF Mono', Monaco, 'JetBrains Mono', ui-monospace, monospace",
+    // Nerd Font variants first so prompts with Powerline / devicon glyphs
+    // render correctly when the user has a Nerd Font installed; plain mono
+    // families after as fallback.
+    fontFamily:
+      "'JetBrainsMono Nerd Font Mono', 'JetBrainsMono Nerd Font'," +
+      "'FiraCode Nerd Font Mono', 'Hack Nerd Font Mono'," +
+      "Menlo, 'SF Mono', Monaco, 'JetBrains Mono', ui-monospace, monospace",
     fontWeight: "normal",
     fontWeightBold: "bold",
     theme: toXtermTheme(getCurrentTheme()),
