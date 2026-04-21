@@ -49,32 +49,32 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 
 ## Install
 
-### macOS one-line install
+### One-line install (macOS and Debian/Ubuntu)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
 ```
 
-Works on Apple Silicon and Intel Macs (universal binary). Since `curl` doesn't apply the `com.apple.quarantine` attribute that browsers add, the unsigned app launches without Gatekeeper warnings.
+The installer auto-detects the OS:
 
-### Manual DMG download
+- **macOS**: downloads the universal DMG (arm64 + x86_64) and copies `ChatTerm.app` to `/Applications`. Since `curl` doesn't apply the `com.apple.quarantine` attribute that browsers add, the unsigned app launches without Gatekeeper warnings.
+- **Debian / Ubuntu**: downloads the arch-matching `.deb` and installs via `sudo dpkg -i` + `sudo apt-get install -f` (will prompt for sudo password).
 
-Grab the DMG from [Releases](https://github.com/chatterm/chatterm/releases). Because ChatTerm is not yet code-signed, double-clicking a browser-downloaded DMG may fail with "ChatTerm is damaged". Strip the quarantine attribute first:
+### Manual download
 
-```bash
-xattr -cr ~/Downloads/ChatTerm_*.dmg
-```
+Pick an asset from [Releases](https://github.com/chatterm/chatterm/releases):
 
-Then open the DMG and drag ChatTerm to `/Applications`.
-
-### Ubuntu / Linux packages
-
-Linux release builds publish `.deb` and `.AppImage` artifacts. On Ubuntu, prefer the `.deb` from [Releases](https://github.com/chatterm/chatterm/releases):
-
-```bash
-sudo dpkg -i ./chatterm_*.deb
-sudo apt-get install -f
-```
+- **macOS DMG** — because ChatTerm is not yet code-signed, a browser-downloaded DMG may fail with "ChatTerm is damaged" on double-click. Strip quarantine first:
+  ```bash
+  xattr -cr ~/Downloads/ChatTerm_*.dmg
+  ```
+  Then open the DMG and drag ChatTerm to `/Applications`.
+- **Ubuntu `.deb`**:
+  ```bash
+  sudo dpkg -i ./chatterm_*.deb
+  sudo apt-get install -f
+  ```
+- **Other Linux (`.AppImage`)**: `chmod +x` and run directly.
 
 ## Development
 
@@ -112,11 +112,14 @@ bash scripts/install-linux.sh
 The hook installer writes `~/.chatterm/hook.sh` and wires it into each agent's config. Pick whichever entry point matches your install:
 
 ```bash
+# Cross-platform (works on macOS and Linux)
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+
 # Installed via DMG / curl on macOS
 bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
 
-# Cross-platform remote setup
-curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+# Installed via .deb on Debian/Ubuntu
+bash /usr/lib/chatterm/resources/setup-hooks.sh
 
 # Running from a repo checkout
 bash scripts/setup-hooks.sh

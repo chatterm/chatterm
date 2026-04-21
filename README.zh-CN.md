@@ -49,32 +49,32 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 
 ## 安装
 
-### macOS 一键安装
+### 一键安装（macOS 和 Debian/Ubuntu）
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/install-remote.sh | bash
 ```
 
-同时支持 Apple Silicon 和 Intel Mac（universal 通用二进制）。`curl` 不会像浏览器那样打 `com.apple.quarantine` 标签，所以未签名的 app 不会被 Gatekeeper 拦截。
+脚本自动检测系统：
 
-### 手动下载 DMG
+- **macOS**：下载 universal DMG（arm64 + x86_64），把 `ChatTerm.app` 复制到 `/Applications`。`curl` 不会像浏览器那样打 `com.apple.quarantine` 标签，所以未签名的 app 不会被 Gatekeeper 拦截。
+- **Debian / Ubuntu**：下载匹配架构的 `.deb`，用 `sudo dpkg -i` + `sudo apt-get install -f` 安装（会弹 sudo 密码提示）。
 
-从 [Releases](https://github.com/chatterm/chatterm/releases) 下载 DMG。因为 ChatTerm 还没做代码签名，浏览器下载的 DMG 双击可能报「文件已损坏」。先剥掉 quarantine 标签：
+### 手动下载
 
-```bash
-xattr -cr ~/Downloads/ChatTerm_*.dmg
-```
+到 [Releases](https://github.com/chatterm/chatterm/releases) 选资产：
 
-然后挂载并把 ChatTerm 拖到 `/Applications`。
-
-### Ubuntu / Linux 包
-
-Linux release 会发布 `.deb` 和 `.AppImage`。Ubuntu 上优先使用 [Releases](https://github.com/chatterm/chatterm/releases) 里的 `.deb`：
-
-```bash
-sudo dpkg -i ./chatterm_*.deb
-sudo apt-get install -f
-```
+- **macOS DMG** —— 因为 ChatTerm 还没做代码签名，浏览器下载的 DMG 双击可能报「文件已损坏」。先剥掉 quarantine 标签：
+  ```bash
+  xattr -cr ~/Downloads/ChatTerm_*.dmg
+  ```
+  然后挂载并把 ChatTerm 拖到 `/Applications`。
+- **Ubuntu `.deb`**：
+  ```bash
+  sudo dpkg -i ./chatterm_*.deb
+  sudo apt-get install -f
+  ```
+- **其他 Linux（`.AppImage`）**：`chmod +x` 后直接运行。
 
 ## 开发
 
@@ -112,11 +112,14 @@ bash scripts/install-linux.sh
 脚本会把 hook 写到 `~/.chatterm/hook.sh`，并修改各 agent 的配置指向它。三种入口，选一个：
 
 ```bash
+# 跨平台（macOS 和 Linux 都可用）
+curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+
 # 通过 DMG / curl 在 macOS 安装后
 bash /Applications/ChatTerm.app/Contents/Resources/setup-hooks.sh
 
-# 跨平台远程配置
-curl -fsSL https://raw.githubusercontent.com/chatterm/chatterm/main/scripts/setup-hooks.sh | bash
+# 通过 .deb 在 Debian/Ubuntu 安装后
+bash /usr/lib/chatterm/resources/setup-hooks.sh
 
 # 从仓库直接跑
 bash scripts/setup-hooks.sh
