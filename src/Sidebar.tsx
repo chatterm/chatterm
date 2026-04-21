@@ -194,14 +194,13 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
       <div className="no-select" style={{ padding: "14px 14px 10px", borderBottom: "1px solid var(--border)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <svg viewBox="0 0 1024 1024" width="22" height="22" style={{ borderRadius: 5 }}>
-              <defs><clipPath id="c-hdr"><path d="M 0 460.8 C 0 299.597 0 219.003 31.3594 157.441 C 58.9365 103.302 102.902 58.9365 157.441 31.3594 C 219.003 0 299.597 0 460.8 0 L 563.2 0 C 724.403 0 804.997 0 866.559 31.3594 C 921.098 58.9365 965.063 103.302 992.641 157.441 C 1024 219.003 1024 299.597 1024 460.8 L 1024 563.2 C 1024 724.403 1024 804.997 992.641 866.559 C 965.063 921.098 921.098 965.063 866.559 992.641 C 804.997 1024 724.403 1024 563.2 1024 L 460.8 1024 C 299.597 1024 219.003 1024 157.441 992.641 C 102.902 965.063 58.9365 921.098 31.3594 866.559 C 0 804.997 0 724.403 0 563.2 L 0 460.8 Z"/></clipPath></defs>
-              <g clipPath="url(#c-hdr)">
-                <rect width="1024" height="1024" fill="#0e639c"/>
-                <path d="M 200 260 L 824 260 Q 864 260 864 300 L 864 680 Q 864 720 824 720 L 560 720 L 420 840 L 450 720 L 200 720 Q 160 720 160 680 L 160 300 Q 160 260 200 260 Z" fill="#ffffff"/>
-                <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="#0e639c" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
-                <rect x="540" y="570" width="180" height="40" rx="20" fill="#0e639c"/>
-              </g>
+            {/* Corner radius matches the sidebar avatar tiles (~17% of side)
+                so the header logo reads as the same shape family. */}
+            <svg viewBox="0 0 1024 1024" width="22" height="22">
+              <rect width="1024" height="1024" rx="170" ry="170" fill="#0e639c"/>
+              <path d="M 200 260 L 824 260 Q 864 260 864 300 L 864 680 Q 864 720 824 720 L 560 720 L 420 840 L 450 720 L 200 720 Q 160 720 160 680 L 160 300 Q 160 260 200 260 Z" fill="#ffffff"/>
+              <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="#0e639c" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="540" y="570" width="180" height="40" rx="20" fill="#0e639c"/>
             </svg>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>ChatTerm</div>
             {totalUnread > 0 && (
