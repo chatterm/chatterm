@@ -46,6 +46,7 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
   const [editing, setEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(s.short);
   const [hover, setHover] = React.useState(false);
+  const composing = React.useRef(false);
   return (
     <div onClick={onClick} onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); setEditName(s.short); }}
       style={{
@@ -68,7 +69,18 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
           }}>{editing ? (
             <input value={editName} onChange={e => setEditName(e.target.value)}
               onBlur={() => { setEditing(false); if (editName.trim()) onRename(editName.trim()); }}
-              onKeyDown={e => { if (e.key === "Enter") { setEditing(false); if (editName.trim()) onRename(editName.trim()); } if (e.key === "Escape") setEditing(false); }}
+              onCompositionStart={() => { composing.current = true; }}
+              onCompositionEnd={() => { composing.current = false; }}
+              onKeyDown={e => {
+                // Don't treat Enter as "submit rename" while an IME candidate
+                // is being committed. Three signals, any one is enough:
+                //   - composing ref (onCompositionStart/End)
+                //   - e.nativeEvent.isComposing (Chromium standard)
+                //   - keyCode 229 (legacy IME marker, still fires in WebKit)
+                if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                if (e.key === "Enter") { setEditing(false); if (editName.trim()) onRename(editName.trim()); }
+                if (e.key === "Escape") setEditing(false);
+              }}
               onClick={e => e.stopPropagation()} autoFocus
               style={{ background: "var(--sidebar-hover)", border: "1px solid var(--accent)", borderRadius: 3, color: "var(--fg, var(--text))", fontSize: "var(--density-font)", fontWeight: 600, padding: "0 4px", width: "100%", outline: "none" }}
             />

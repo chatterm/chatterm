@@ -181,6 +181,7 @@ export default function TerminalPane({ session, onSend, onTogglePin, onToggleMut
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -238,7 +239,12 @@ export default function TerminalPane({ session, onSend, onTogglePin, onToggleMut
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { composing.current = false; }}
+            onKeyDown={e => {
+              if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+            }}
             disabled={readOnly}
             placeholder={readOnly ? "(read-only log stream)" : session.kind === "agent" ? "Message the agent — Shift+Enter for newline" : "Type a command…"}
             rows={1}

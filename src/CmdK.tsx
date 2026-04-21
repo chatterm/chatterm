@@ -19,6 +19,7 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const ref = useRef<HTMLInputElement>(null);
+  const composing = useRef(false);
   useEffect(() => { ref.current?.focus(); }, []);
 
   const results = useMemo(() => {
@@ -36,6 +37,8 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
     if (e.key === "Escape") { e.preventDefault(); onClose(); }
     if (e.key === "ArrowDown") { setIdx(i => Math.min(i + 1, results.length - 1)); e.preventDefault(); }
     if (e.key === "ArrowUp") { setIdx(i => Math.max(i - 1, 0)); e.preventDefault(); }
+    // Skip Enter while IME is committing a candidate.
+    if (composing.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") { if (results[idx]) { onSelect(results[idx].id); onClose(); } }
   };
 
@@ -45,6 +48,8 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border-strong)" }}>
           <Ic.search style={{ color: "var(--text-dim)" }} />
           <input ref={ref} value={q} onChange={e => { setQ(e.target.value); setIdx(0); }} onKeyDown={onKey}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { composing.current = false; }}
             placeholder="Search sessions, cwd, output…"
             style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: "var(--text-strong)", fontSize: 15, fontFamily: "inherit" }}
           />
