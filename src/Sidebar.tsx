@@ -2,6 +2,19 @@ import React from "react";
 import { Session, SessionAvatar, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
 import { Ic } from "./Icons";
 
+// Full path + "$" when it fits the sidebar width; fall back to the last
+// path segment + "$" when too long. Examples:
+//   "/tmp"         → "/tmp$"
+//   "/a/b/short"   → "/a/b/short$"
+//   "/a/b/c/very-long-path" → "very-long-path$"
+const SIDEBAR_CWD_MAX = 28;
+function shortCwd(cwd: string): string {
+  const full = `${cwd}$`;
+  if (full.length <= SIDEBAR_CWD_MAX) return full;
+  const seg = cwd.split("/").filter(Boolean).pop() || cwd;
+  return `${seg}$`;
+}
+
 export function Avatar({ av, size = 36, status, group }: { av: SessionAvatar; size?: number; status?: SessionStatus; group?: boolean }) {
   const font = Math.round(size * 0.4);
   return (
@@ -118,16 +131,18 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
             {s.status === "running" && !s.unread ? (
               <span style={{ color: "var(--status-running)" }}>
                 <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
-                <span style={{ marginLeft: 6, color: "var(--text-dim)" }}>{truncate(s.lastPreview, 28)}</span>
+                <span style={{ marginLeft: 6, color: "var(--text-dim)" }}>{truncate(s.lastPreview || (s.cwd ? shortCwd(s.cwd) : ""), 28)}</span>
               </span>
-            ) : (
+            ) : s.lastPreview ? (
               <>
                 {s.lastSender && s.lastSender !== "you" && (
                   <span style={{ color: "var(--text-mute)" }}>{s.lastSender}: </span>
                 )}
                 {truncate(s.lastPreview, 36)}
               </>
-            )}
+            ) : s.cwd ? (
+              <span style={{ color: "var(--text-mute)" }}>{shortCwd(s.cwd)}</span>
+            ) : null}
           </div>
           <UnreadBadge n={s.unread} muted={s.muted} />
         </div>

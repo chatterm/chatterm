@@ -89,9 +89,19 @@ export default function App() {
           setSessions(restored);
           setActiveId(restored[0]?.id || null);
 
-          // Recreate PTY sessions — just open shell in cwd, don't auto-resume agents
+          // Recreate PTY sessions — just open shell in cwd, don't auto-resume agents.
+          // "~" is a shell alias, not a real path; pass null so the backend falls
+          // back to $HOME. After create_session resolves we pull the live cwd via
+          // `session_cwd` — the pty-meta listener may not be registered in time
+          // for the backend's opportunistic initial emit.
           for (const m of saved) {
-            invoke("create_session", { id: m.id, cols: 120, rows: 40, command: null, cwd: m.cwd || null }).catch(() => {});
+            const spawnCwd = m.cwd && m.cwd !== "~" ? m.cwd : null;
+            invoke("create_session", { id: m.id, cols: 120, rows: 40, command: null, cwd: spawnCwd })
+              .then(() => invoke<string | null>("session_cwd", { id: m.id }))
+              .then(cwd => {
+                if (cwd) setSessions(prev => prev.map(s => s.id === m.id ? { ...s, cwd } : s));
+              })
+              .catch(() => {});
           }
           return;
         }
@@ -193,6 +203,12 @@ export default function App() {
     setActiveId(session.id);
     try {
       await invoke("create_session", { id: session.id, cols: 120, rows: 40, command: command || null, cwd: null });
+      // Pull initial cwd once the PTY is up (see restore branch for rationale).
+      invoke<string | null>("session_cwd", { id: session.id })
+        .then(cwd => {
+          if (cwd) setSessions(prev => prev.map(s => s.id === session.id ? { ...s, cwd } : s));
+        })
+        .catch(() => {});
     } catch (e: any) {
       setSessions(prev => prev.map(s =>
         s.id === session.id ? { ...s, status: "error", lines: [...s.lines, { t: "err" as const, text: String(e) }] } : s
@@ -300,6 +316,15 @@ export default function App() {
             }}>{active.avatar.mono}</div>
             <div style={{ fontSize: 13, fontWeight: 400, color: "var(--text-strong)" }}>{active.name}</div>
             <span className="mono" style={{ fontSize: 11, color: "var(--text-dim)" }}>{active.kind}</span>
+            {active.cwd && (
+              <span className="mono" style={{
+                fontSize: 11, color: "var(--text-dim)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                maxWidth: 400,
+              }} title={active.cwd}>
+                {active.cwd}
+              </span>
+            )}
             <div style={{ flex: 1 }} />
             <button
               onClick={toggleFullscreen}

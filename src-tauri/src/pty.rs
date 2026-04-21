@@ -38,6 +38,10 @@ pub struct PtySession {
     master_pty: Option<Box<dyn MasterPty + Send>>,
     #[allow(dead_code)]
     pub id: String,
+    /// PID of the spawned shell/agent process. Used by `session_cwd()` so the
+    /// frontend can pull the current working directory on demand rather than
+    /// relying on a pty-meta emit racing with its listener registration.
+    child_pid: u32,
     _child: Option<Box<dyn portable_pty::Child + Send>>,
     _process: Option<std::process::Child>,
 }
@@ -100,6 +104,7 @@ impl PtyManager {
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn: {e}"))?;
+        let child_pid = child.process_id().unwrap_or(0);
 
         // Reader thread
         let reader = pair
@@ -115,7 +120,36 @@ impl PtyManager {
             let mut last_state: Option<String> = None;
             let mut last_preview: Option<String> = None;
             let mut last_shell_cmd: Option<String> = None;
+            // Live cwd tracking for shell sessions (agents get their cwd from
+            // detect_agent_cwd on agent change). Throttled to avoid spawning
+            // lsof / reading /proc on every single PTY output burst.
+            let mut last_shell_cwd: Option<String> = None;
+            let mut last_cwd_probe = std::time::Instant::now()
+                - std::time::Duration::from_secs(10);
             let mut vscreen = VScreen::new();
+
+            // Best-effort initial push of cwd. A single emit can race with the
+            // frontend's `listen("pty-meta")` registration on cold start, so
+            // the frontend also pulls via the `session_cwd` command after it
+            // knows the session exists. The in-loop probe below keeps cwd
+            // fresh as the user cds around.
+            if child_pid > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if let Some(cwd) = process_cwd(&child_pid.to_string()) {
+                    last_shell_cwd = Some(cwd.clone());
+                    last_cwd_probe = std::time::Instant::now();
+                    on_meta(PtyMeta {
+                        session_id: session_id.clone(),
+                        title: None,
+                        agent: None,
+                        state: None,
+                        preview: None,
+                        notification: None,
+                        command: None,
+                        cwd: Some(cwd),
+                    });
+                }
+            }
             loop {
                 match std::io::Read::read(&mut buf_reader, &mut buf) {
                     Ok(0) => break,
@@ -380,6 +414,31 @@ impl PtyManager {
                             });
                         }
 
+                        // Live shell cwd tracking — only for non-agent sessions
+                        // (agents have their own cwd discovery via detect_agent_cwd).
+                        // Throttled to once per 500ms worth of output bursts.
+                        if last_agent_cfg.is_none()
+                            && child_pid > 0
+                            && last_cwd_probe.elapsed() >= std::time::Duration::from_millis(500)
+                        {
+                            last_cwd_probe = std::time::Instant::now();
+                            if let Some(new_cwd) = process_cwd(&child_pid.to_string()) {
+                                if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                                    last_shell_cwd = Some(new_cwd.clone());
+                                    on_meta(PtyMeta {
+                                        session_id: session_id.clone(),
+                                        title: None,
+                                        agent: None,
+                                        state: None,
+                                        preview: None,
+                                        notification: None,
+                                        command: None,
+                                        cwd: Some(new_cwd),
+                                    });
+                                }
+                            }
+                        }
+
                         on_output(PtyOutput {
                             session_id: session_id.clone(),
                             data,
@@ -399,6 +458,7 @@ impl PtyManager {
             master_write: Arc::new(Mutex::new(master_write)),
             master_pty: Some(pair.master),
             id: req.id.to_string(),
+            child_pid,
             _child: Some(child),
             _process: None,
         };
@@ -448,6 +508,18 @@ impl PtyManager {
         } else {
             Ok(()) // claude process sessions don't have a PTY master
         }
+    }
+
+    /// Look up the current working directory of a session's child process.
+    /// Called by the frontend via the `session_cwd` Tauri command to pull
+    /// the cwd on demand (avoids racing with `pty-meta` event listener setup).
+    pub fn session_cwd(&self, id: &str) -> Option<String> {
+        let sessions = self.sessions.lock().ok()?;
+        let session = sessions.get(id)?;
+        if session.child_pid == 0 {
+            return None;
+        }
+        process_cwd(&session.child_pid.to_string())
     }
 }
 

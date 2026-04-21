@@ -115,6 +115,11 @@ fn resize_session(
     state.pty_mgr.resize_session(&id, cols, rows)
 }
 
+#[tauri::command]
+fn session_cwd(state: tauri::State<'_, AppState>, id: String) -> Option<String> {
+    state.pty_mgr.session_cwd(&id)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -127,6 +132,7 @@ pub fn run() {
             write_session,
             kill_session,
             resize_session,
+            session_cwd,
             toggle_recording,
             is_recording,
             import_terminal_theme,
