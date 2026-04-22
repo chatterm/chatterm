@@ -1,0 +1,69 @@
+# Tests whether Codex asks permission for tool execution (beyond its
+# startup trust dialog). Also doubles as a longer thinking session to
+# enumerate Codex's braille title spinner frames.
+
+agent = "codex"
+case = "permission"
+command = ["codex"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 10000
+timeout_ms = 240000
+
+# Trust dialog on startup.
+[[step]]
+kind = "wait_idle"
+ms = 4000
+
+[[step]]
+kind = "send"
+data = "\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000
+
+# Long-thinking probe: asks for something Codex has to reason about, not
+# just recite. More thinking = more spinner frames to enumerate.
+[[step]]
+kind = "send"
+data = "write a 50-line python script that implements a basic TCP echo server with asyncio, including error handling and shutdown signals\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 60000
+
+# File create — should trigger permission if codex has a per-op gate.
+[[step]]
+kind = "send"
+data = "now save it to echo_server.py\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 40000
+
+# Bash exec — another permission vector.
+[[step]]
+kind = "send"
+data = "run python -c 'print(1+1)' to verify python works\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000
+
+[[step]]
+kind = "send"
+data = "\u0004"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

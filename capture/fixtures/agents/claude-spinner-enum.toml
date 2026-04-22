@@ -1,0 +1,40 @@
+# Long-thinking fixture for Claude: ask a question that forces >60s of
+# reasoning so we catch every frame of the OSC title braille cycle. The
+# final plain-text content isn't what we care about — only the title
+# transitions (extractable from raw.bin with OSC 0 regex).
+
+agent = "claude"
+case = "spinner-enum"
+command = ["claude"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 15000
+timeout_ms = 300000
+
+[[step]]
+kind = "wait_regex"
+pattern = "\\xe2\\x9c\\xb3 Claude Code"
+timeout_ms = 20000
+
+[[step]]
+kind = "wait_idle"
+ms = 1000
+
+# Deliberately open-ended and reflective — no tool calls, just thinking.
+[[step]]
+kind = "send"
+data = "analyze the trade-offs between actor models, CSP (like Go channels), and shared-memory concurrency. Give me a 500-word comparison covering throughput, fairness, debugging experience, and failure isolation.\r"
+
+# Big idle window to capture the full thinking cycle.
+[[step]]
+kind = "wait_idle"
+ms = 90000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000

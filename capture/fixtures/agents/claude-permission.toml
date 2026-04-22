@@ -1,0 +1,68 @@
+# Captures the Bash permission approval flow.
+#
+# Claude Code normally asks "Do you want to proceed?" before running an
+# arbitrary bash command. We want to see the raw escape sequences used to
+# render that dialog (box drawing, highlighted option, SGR colors) and the
+# state transition after approval.
+#
+# Requires: /tmp/chatterm-capture-sandbox exists with some content.
+
+agent = "claude"
+case = "permission-approve"
+command = ["claude"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 3000
+timeout_ms = 120000
+
+# 1. Wait until Claude's startup chrome settles (idle title marker ✳).
+#    The ✳ glyph is U+2733, UTF-8 bytes e2 9c b3. When the title stops
+#    spinning through braille glyphs and lands on ✳ we consider it ready.
+[[step]]
+kind = "wait_regex"
+pattern = "\\xe2\\x9c\\xb3 Claude Code"
+timeout_ms = 15000
+
+[[step]]
+kind = "wait_idle"
+ms = 1000
+
+# 2. Ask Claude to touch a file — unambiguous write intent forces the Bash
+#    (or Write) tool permission dialog on the modern defaults.
+[[step]]
+kind = "send"
+data = "use bash to run: touch hello-from-capture.txt\r"
+
+# 3. Wait for the permission dialog. Empirically Claude takes 30-60s from
+#    prompt submit to rendering the approval chrome, so be generous.
+[[step]]
+kind = "wait_regex"
+pattern = "Do you want"
+timeout_ms = 90000
+
+[[step]]
+kind = "wait_idle"
+ms = 500
+
+# 4. Approve with option 1 (Yes).
+[[step]]
+kind = "send"
+data = "1"
+
+# 5. Let Claude run the command and render the result. `✳ Claude Code` would
+#    be the obvious ready marker, but empirically the OSC title keeps the last
+#    task label ("✳ Create ... file") after completion, so it never reverts to
+#    plain "Claude Code" mid-session. Byte-idle is the reliable signal.
+[[step]]
+kind = "wait_idle"
+ms = 8000
+
+# 6. Graceful exit.
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000
