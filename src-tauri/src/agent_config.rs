@@ -272,6 +272,13 @@ mod tests {
     fn test_codex_asking_detection() {
         let agents = agents();
         let codex = agents.iter().find(|a| a.id == "codex").unwrap();
+        // Startup trust dialog.
         assert_eq!(codex.detect_state_from_screen(&["Do you trust the contents of this directory?".to_string()]), Some("asking"));
+        // Runtime sandbox-permission dialog (fires when Codex wants to run a
+        // command that its auto-approval rules haven't covered).
+        assert_eq!(codex.detect_state_from_screen(&["Would you like to run the following command?".to_string()]), Some("asking"));
+        // Footer of the same dialog — sticks around even if the top heading
+        // scrolls off-screen in narrow layouts.
+        assert_eq!(codex.detect_state_from_screen(&["3. No, and tell Codex what to do differently (esc)".to_string()]), Some("asking"));
     }
 }

@@ -192,7 +192,9 @@
         },
         "asking": {
           "screen_regex": [
-            "Do you trust the contents of this directory"
+            "Do you trust the contents of this directory",
+            "Would you like to run the following command",
+            "No, and tell Codex what to do differently"
           ]
         },
         "idle": {
