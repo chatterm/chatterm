@@ -211,7 +211,7 @@ fn start_fifo_listener(app: AppHandle) {
             Ok(f) => f,
             Err(_) => { std::thread::sleep(std::time::Duration::from_millis(500)); continue; }
         };
-        for line in BufReader::new(file).lines().flatten() {
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
             dispatch_pipe_line(&app, &line);
         }
     });
@@ -252,7 +252,7 @@ fn start_fifo_listener(app: AppHandle) {
             };
             let _ = unsafe { ConnectNamedPipe(handle, None) };
             let file = unsafe { std::fs::File::from_raw_handle(handle.0 as *mut _) };
-            for line in BufReader::new(file).lines().flatten() {
+            for line in BufReader::new(file).lines().map_while(Result::ok) {
                 dispatch_pipe_line(&app, &line);
             }
         }
