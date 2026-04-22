@@ -402,12 +402,12 @@ impl PtyManager {
                                 preview: if preview_changed { preview } else { None },
                                 notification: notification.clone(),
                                 command: if agent_changed {
-                                    detect_agent_command(agent.as_deref())
+                                    detect_agent_command(agent.as_deref(), child_pid)
                                 } else {
                                     None
                                 },
                                 cwd: if agent_changed {
-                                    detect_agent_cwd(agent.as_deref())
+                                    detect_agent_cwd(agent.as_deref(), child_pid)
                                 } else {
                                     None
                                 },
@@ -570,23 +570,80 @@ fn extract_osc99(data: &str) -> Option<PtyNotification> {
     None
 }
 
-/// Detect the full command line and cwd of a running agent by scanning processes
-fn detect_agent_command(agent: Option<&str>) -> Option<String> {
+/// Return the set of PIDs that are transitive descendants of `root_pid`
+/// (not including `root_pid` itself). Used to scope agent detection to the
+/// session's own process subtree so unrelated instances of the same binary
+/// running elsewhere on the machine are not mis-attributed. Returns an empty
+/// set if `root_pid` is 0 or `ps` fails.
+fn descendants_of(root_pid: u32) -> std::collections::HashSet<u32> {
+    let mut descendants = std::collections::HashSet::new();
+    if root_pid == 0 {
+        return descendants;
+    }
+    let output = match std::process::Command::new("ps")
+        .args(["-eo", "pid,ppid"])
+        .output()
+        .ok()
+    {
+        Some(o) => o,
+        None => return descendants,
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut children: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    for line in text.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let Ok(pid) = parts[0].parse::<u32>() else { continue };
+        let Ok(ppid) = parts[1].parse::<u32>() else { continue };
+        children.entry(ppid).or_default().push(pid);
+    }
+    let mut queue = vec![root_pid];
+    while let Some(pid) = queue.pop() {
+        if let Some(kids) = children.get(&pid) {
+            for &kid in kids {
+                if descendants.insert(kid) {
+                    queue.push(kid);
+                }
+            }
+        }
+    }
+    descendants
+}
+
+/// Detect the full command line and cwd of a running agent by scanning the
+/// descendants of `root_pid` (the session's own PTY child). Unrelated
+/// instances of the same binary elsewhere on the system are ignored.
+fn detect_agent_command(agent: Option<&str>, root_pid: u32) -> Option<String> {
     let bin = match agent? {
         "claude" => "claude",
         "kiro" => "kiro-cli",
         "codex" => "codex",
         _ => return None,
     };
+    let tree = descendants_of(root_pid);
+    if tree.is_empty() {
+        return None;
+    }
     let output = std::process::Command::new("ps")
-        .args(["-eo", "args"])
+        .args(["-eo", "pid,args"])
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
+    for line in text.lines().skip(1) {
         let trimmed = line.trim();
-        let base = trimmed.split('/').next_back().unwrap_or(trimmed);
-        if base.starts_with(bin) && !trimmed.contains("hook") && !trimmed.contains("ps ") {
+        let (pid_s, args) = match trimmed.split_once(char::is_whitespace) {
+            Some((p, a)) => (p.trim(), a.trim()),
+            None => continue,
+        };
+        let Ok(pid) = pid_s.parse::<u32>() else { continue };
+        if !tree.contains(&pid) {
+            continue;
+        }
+        let base = args.split('/').next_back().unwrap_or(args);
+        if base.starts_with(bin) && !args.contains("hook") && !args.contains("ps ") {
+            let trimmed = args;
             // Clean up: "node /opt/homebrew/bin/codex --foo" → "codex --foo"
             //           "/Users/x/.local/bin/claude --foo" → "claude --foo"
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
@@ -637,28 +694,35 @@ fn detect_agent_command(agent: Option<&str>) -> Option<String> {
     None
 }
 
-fn detect_agent_cwd(agent: Option<&str>) -> Option<String> {
+fn detect_agent_cwd(agent: Option<&str>, root_pid: u32) -> Option<String> {
     let bin = match agent? {
         "claude" => "claude",
         "kiro" => "kiro-cli",
         "codex" => "codex",
         _ => return None,
     };
+    let tree = descendants_of(root_pid);
+    if tree.is_empty() {
+        return None;
+    }
     let output = std::process::Command::new("ps")
         .args(["-eo", "pid,args"])
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
+    for line in text.lines().skip(1) {
         let trimmed = line.trim();
         let parts: Vec<&str> = trimmed.splitn(2, char::is_whitespace).collect();
         if parts.len() < 2 {
             continue;
         }
+        let Ok(pid) = parts[0].parse::<u32>() else { continue };
+        if !tree.contains(&pid) {
+            continue;
+        }
         let base = parts[1].split('/').next_back().unwrap_or(parts[1]);
         if base.starts_with(bin) && !parts[1].contains("hook") {
-            let pid = parts[0].trim();
-            if let Some(cwd) = process_cwd(pid) {
+            if let Some(cwd) = process_cwd(&pid.to_string()) {
                 return Some(cwd);
             }
         }

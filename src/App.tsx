@@ -144,9 +144,15 @@ export default function App() {
           }
         }
 
-        // Capture agent command from process detection
+        // Capture agent command — but only when it belongs to the session's
+        // current agent. Without this guard, a cross-agent match in the
+        // backend (e.g. detecting codex while session is still labelled kiro)
+        // could silently overwrite command with an unrelated process's args.
         if (command) {
-          (updates as any)._command = command;
+          const currentAgent = (s as any)._agent;
+          if (!currentAgent || !agent || agent === currentAgent) {
+            (updates as any)._command = command;
+          }
         }
 
         // Update cwd from hook
