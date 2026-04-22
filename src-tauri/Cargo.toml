@@ -21,4 +21,9 @@ portable-pty = "0.8"
 vte = "0.15"
 regex = "1"
 plist = "1"
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_System_Pipes", "Win32_System_IO", "Win32_Storage_FileSystem", "Win32_Foundation", "Win32_Security"] }
