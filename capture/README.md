@@ -109,6 +109,7 @@ Do you want to make this edit to <file>?
 - **使用 kitty keyboard protocol**：`\e[>7u`（push flag）/ `\e[<1u`（pop flag）。这是 xterm modifyOtherKeys 的替代方案，让 Ctrl+Shift+组合键能被明确区分。终端**必须**支持才能正确收键。
 - **使用 DECSTBM 滚动区**：`\e[1;40r` 把滚动区限制在固定行范围，让输出滚动不影响底部状态栏。这是经典 TUI 做法，claude 和 kiro 都没用。
 - **字节量最省**：5.5 KB 做完同样 3 个 prompt。说明 codex 的重绘策略很精细，只更新变化的区域。
+- **Prompt 提交必须走 bracketed paste**（第二轮踩坑总结）：Codex 启动就 push Kitty flag 7，keystroke 路径下 `\r` 被 disambiguate 成 `\e[13u`，而 Codex 的 crossterm 在 flag 7 下**不再**接受裸 `\r`；`\e[13u` / `\e[13;1u` / `\e[13;1:1u` 等各种 Kitty 编码我都试过也不提交。**唯一工作的编码**是把 prompt 包进 bracketed paste：`\e[200~<prompt>\e[201~\r` —— crossterm 的 paste 事件通道和 keystroke 正交，paste-end 之后的 `\r` 作为独立 Enter 被接收。所以本工具 codex fixture 的 `send` 必须手动包裹，`codex-basic.toml` 里有模板。
 
 ### 1.4 Kiro CLI 的关键细节
 
@@ -148,16 +149,18 @@ Do you want to make this edit to <file>?
 | 权限对话框无 box-drawing                | 识别权限弹窗用文本特征：`Do you want to proceed?` / `Do you want to make this edit` |
 | Claude Edit diff 用背景色区分增删        | diff 区域识别用 `\e[48;2;...m` 背景色 pattern，不要靠字符 `+/-`                   |
 | Kiro 退出留 `?25` 不恢复                | chatterm 在 PTY EOF 时主动发 `\e[?25h` 兜底                                     |
-| Claude title 只 2 帧 blink               | `agents.json` 的 thinking 前缀改成 `["⠂","⠐"]`（原来 3 个有 2 错）               |
-| Codex title 10 帧未配                    | `agents.json` 补 `osc_title_prefix: ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]` |
-| Kiro body spinner 可作快触发             | 在 `Thinking\.\.\.` 基础上追加动画字符 `⠀/⠁/⠉/⠙/⠹/⢹/⣹/⣽/⣿` 触发器                |
-| Kiro 权限对话框有 box-drawing 变体         | 识别规则：`\w+ requires approval` 为主，`Yes, single permission` 兜底              |
-| Claude "accept edits on" 模式隐形         | 新状态（或 agent 徽章）：匹配 `⏵⏵ accept edits on`，告知用户"无需确认模式"开启        |
-| Codex MCP 启动可阻塞 prompt 提交           | fixture 的 ready 条件要等 `Starting MCP servers` 消失；chatterm 启动期需容忍长延迟    |
+| Claude title 只 2 帧 blink               | ✅ `agents.json` 的 thinking 前缀已改成 `["⠂","⠐"]`（cb8307d）                    |
+| Codex title 10 帧未配                    | ✅ `agents.json` 已补 `osc_title_prefix: ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]`（cb8307d）|
+| Kiro body spinner 可作快触发             | 在 `Thinking\.\.\.` 基础上追加动画字符 `⠀/⠁/⠉/⠙/⠹/⢹/⣹/⣽/⣿` 触发器（未做）         |
+| Kiro 权限对话框有 box-drawing 变体         | ✅ 识别规则 `\w+ requires approval` 已落地 `agents.json` asking（cb8307d）        |
+| Claude "accept edits on" 模式隐形         | 新状态（或 agent 徽章）：匹配 `⏵⏵ accept edits on`，告知用户"无需确认模式"开启（未做）|
+| Codex prompt 必须 bracketed-paste 提交    | ✅ fixture 里用 `\e[200~...\e[201~\r` 包裹；已在 codex-basic.toml 提供模板（a0c7624）|
 
-### 1.6 Asking 状态提案（2026-04-22 第二轮草稿）
+### 1.6 Asking 状态（已落地：cb8307d + d98df25 + 96fedbe + a0c7624）
 
-现有 `StateDef` 只有 `thinking / idle`。权限对话框弹出时 Claude title 仍是 `✳ <task>`（命中 idle 规则），实际用户被阻塞 —— 这是**现行规则的 bug**，不仅是缺 feature。建议新增非必填字段 `asking`，优先级 `asking > thinking > idle`。
+现有 `StateDef` 原本只有 `thinking / idle`。权限对话框弹出时 Claude title 仍是 `✳ <task>`（命中 idle 规则），实际用户被阻塞 —— 这是**现行规则的 bug**，不只是缺 feature。`cb8307d` 落地了非必填字段 `asking`，优先级 `asking > thinking > idle`；`96fedbe` 把 Sidebar 的 asking 状态点做成红色快脉动以视觉强调。
+
+最终落地的 regex（三家都已 ship 并实拍验证命中）：
 
 ```jsonc
 // Claude
@@ -172,25 +175,29 @@ Do you want to make this edit to <file>?
 // Kiro
 "asking": {
   "screen_regex": [
-    "requires approval",                     // 主规则，verb 不限
+    "requires approval",                     // 主规则，verb 不限（write / shell / web_fetch 都 cover）
     "Yes, single permission",                // 备份规则 1
     "Trust, always allow in this session"    // 备份规则 2
   ]
 }
 
-// Codex（目前只有 trust dialog 数据；tool-permission chrome 待后续补）
+// Codex（d98df25 基于用户截图 + a0c7624 harness 实拍双重验证）
 "asking": {
   "screen_regex": [
-    "Do you trust the contents of this directory"
+    "Do you trust the contents of this directory",  // 启动 trust dialog
+    "Would you like to run the following command",  // 运行时 sandbox 权限
+    "No, and tell Codex what to do differently"     // 选项 3 兜底
   ]
 }
 ```
 
-**同步需做的迁移**：现有 `chrome[]` 里的以下 pattern 是 asking chrome 的一部分，应从 chrome 过滤迁入 asking（否则 preview 会抹掉关键对话框内容，用户看不到要确认的东西）：
+Hook API 的 `"ask"` 事件（现 Codex / Claude hooks 支持）同步从"映射到 idle"改成"映射到 asking"（cb8307d）。
+
+**未迁移的 chrome 规则（后续清单）**：现有 `chrome[]` 里仍有一批 asking chrome 的构成文本被当 chrome 剥掉，导致 asking 状态下 preview 看不到对话框内容：
 
 - Claude: `"yes, i trust|no, exit"`、`"enter to confirm"`、`"quick safety check"`、`"be able to read, edit"`、`"security guide"`
 
-**`asking` 状态下的 preview 行为**应该和 chrome 过滤解耦：asking 时 preview **保留**对话框原文，让 Sidebar 能一眼看出"要去确认"。
+这些应该从 chrome 迁移到 asking.screen_regex（或者让 preview 抽取路径感知 asking 状态，不剥 chrome）。目前**没做**，需要配合 `pty.rs` preview 路径一起改 —— 见"后续方向"。
 
 ---
 
@@ -286,7 +293,7 @@ timeout_ms = 90000
 
 [[step]]
 kind = "send"                    # 往 PTY 写字节
-data = "1"                       # TOML 字符串原样发送；控制字节用 \u00XX
+data = "1<CR>"                   # 支持命名键 token（见下文 §2.4.1）
 
 [[step]]
 kind = "wait_idle"               # 字节静默 ms 则继续
@@ -304,9 +311,38 @@ ms = 1000
 
 **陷阱**：
 
-- TOML basic string **不允许**字面 `\x00-\x1F`（除 `\t`）。发 Ctrl-C / Ctrl-D 之类必须用 `""` / `""`。
-- `wait_regex` 用 `regex::bytes` + 自动 `(?-u)` 前缀做**字节级**匹配，所以 `\\xe2\\x9c\\xb3` 能正确命中 `✳` 的 UTF-8 三字节。如果想匹配多字节字符，用字节转义比写 Unicode 码点更稳。
-- `send.data` **不做**二次 escape。想发 ESC 让 shell 的 printf 解释，就写 `"\\e[31m"`（TOML 解析后是 `\e[31m` 两字符）；想发真 ESC 字节，写 `"[31m"`。
+- TOML basic string **不允许**字面 `\x00-\x1F`（除 `\t`）。**首选方案**是下面的命名键 token；如果非要裸 unicode 写 ESC 用 `"\u001B"`、Ctrl-C 用 `"\u0003"`、Ctrl-D 用 `"\u0004"`。
+- `wait_regex` 用 `regex::bytes` + 自动 `(?-u)` 前缀做**字节级**匹配，所以 `\\xe2\\x9c\\xb3` 能正确命中 `✳` 的 UTF-8 三字节。
+- `send.data` **不做**二次 escape（除命名键 token 外）。想发 ESC 让 shell 的 printf 解释，就写 `"\\e[31m"`（TOML 解析后是 `\e[31m` 两字符）；想发真 ESC 字节，用 `"<ESC>[31m"`。
+
+#### 2.4.1 命名键 token（推荐）
+
+`send.data` 支持下列尖括号包裹的命名键 token，会在发送前展开成对应字节。这些 token 在**自然语言和 shell 文本中不会出现**，所以不会误伤正常 prompt：
+
+| Token   | 字节  | 语义                    |
+| ------- | ------- | ----------------------- |
+| `<ESC>` | 0x1B    | ESC / 任何 CSI 起始字节 |
+| `<C-c>` | 0x03    | Ctrl-C（中断）          |
+| `<C-d>` | 0x04    | Ctrl-D（EOT）           |
+| `<CR>`  | 0x0D    | Carriage Return         |
+| `<LF>`  | 0x0A    | Line Feed               |
+| `<TAB>` | 0x09    | Tab                     |
+| `<BS>`  | 0x08    | Backspace               |
+
+示例：关 dialog `<ESC>`、中断 `<C-c>`、exit TUI `<C-d>`、主动换行 `<LF>`。
+
+#### 2.4.2 Codex 专用：bracketed-paste 提交
+
+**Codex 启动就 push Kitty keyboard flag 7**，keystroke 路径下裸 `\r` 不会 submit（详见 §1.3）。所以 Codex fixture 里每条 prompt 都要包进 bracketed paste：
+
+```toml
+[[step]]
+kind = "send"
+data = "<ESC>[200~say hi in one word<ESC>[201~\r"
+```
+
+Crossterm 的 paste 事件通道和 keystroke 正交，paste-end 后的 `\r` 作为独立 Enter 被处理。Claude / Kiro 不需要这么干，`"say hi\r"` 直接可用。`codex-basic.toml` 和 `codex-permission-matrix.toml` 是两个参考模板。
+
 
 ### 2.5 ANSI 类别分桶
 
@@ -438,6 +474,7 @@ asciinema play artifacts/acme/basic/cast.json
 - **`?2026` 是否出现**：如果有，说明 agent 依赖同步更新，chatterm 渲染器要相应处理
 - **权限/确认 dialog 的文本特征**：找一句稳定的、不会随 prompt 变化的句子（如 `Do you want to proceed?`）
 - **思考/等待标记**：不一定在 title，可能在 body（如 kiro 的 `Thinking... (esc to cancel)`）
+- **Kitty keyboard flag push（`\e[>Nu`）**：如果启动字节流里有这个序列（如 codex 的 `\e[>7u`），那 agent 多半用了 crossterm/ratatui 且启用了 progressive enhancement —— **裸 `\r` 可能不被识别为 Enter**。首次写 prompt 步骤没看到 title 动起来时八成是这个。对策：把 prompt 包进 bracketed paste（`<ESC>[200~...<ESC>[201~\r`），见 §2.4.2。
 
 ### Step 4：用 `wait_regex` 锁定关键跃迁
 
@@ -520,3 +557,5 @@ jq -r '.categories | to_entries | .[] | "\(.key) \(.value.count)"' \
 - 还没有 `capture diff` / `capture baseline` 子命令做回归断言。手工 `jq` 够用但繁琐。
 - `cast.json` 走 `String::from_utf8_lossy`，遇到跨 UTF-8 边界分块的极端情况可能显示 `�`。回放演示够用，但不应作为分析源。
 - Agent fixture 会产生真实副作用（在 cwd 建文件、改文件、调 API）。务必跑在一次性沙箱目录。
+- Codex fixture 需要手动给每条 prompt 包 bracketed paste（`<ESC>[200~...<ESC>[201~\r`）。更便利的做法是让 recorder 识别 `agent = "codex"` 时自动包裹，但目前没做 —— 保持显式让规则可见。
+- `chrome[]` 里仍有若干 trust/安全对话框文本被剥掉了（见 §1.6 末尾），asking 状态下 preview 显示会落空。需要配合 `pty.rs` 的 preview 路径一起改（让 asking 状态不剥 chrome，或者把这些 pattern 迁到 asking.screen_regex）。

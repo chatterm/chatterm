@@ -109,6 +109,7 @@ Neither uses box-drawing glyphs — it's all `\e[1C` padding + truecolor SGR + t
 - **Uses the Kitty keyboard protocol**: `\e[>7u` (push flags) / `\e[<1u` (pop flags). This is the xterm `modifyOtherKeys` alternative, enabling unambiguous Ctrl+Shift combo detection. The host terminal **must** support it or key input breaks.
 - **Uses DECSTBM scroll regions**: `\e[1;40r` confines scrolling output so the status bar at the bottom is left alone. Classic TUI technique neither Claude nor Kiro uses.
 - **Smallest byte footprint**: 5.5 KB for the same three prompts. Codex has very precise region-update strategy.
+- **Prompt submit must go through bracketed paste** (second-sweep pitfall): Codex pushes Kitty keyboard flag 7 at startup, which disambiguates Enter away from plain CR. Crossterm under flag 7 does **not** accept raw `\r`; `\e[13u` / `\e[13;1u` / `\e[13;1:1u` and other Kitty-encoded variants also fail. The **only** encoding that submits is wrapping the prompt in bracketed paste: `\e[200~<prompt>\e[201~\r` — crossterm's paste channel is orthogonal to the keystroke path, and the trailing `\r` after paste-end is accepted as submit. Codex fixtures in this tool must therefore wrap each prompt manually; `codex-basic.toml` has the template.
 
 ### 1.4 Kiro CLI deep-dive
 
@@ -148,16 +149,18 @@ Neither uses box-drawing glyphs — it's all `\e[1C` padding + truecolor SGR + t
 | Permission dialog has no box-drawing             | Detect permission prompts via text features: `Do you want to proceed?` / `Do you want to make this edit` |
 | Claude Edit-diff uses bg color for add/remove     | Diff-region detection should key off `\e[48;2;...m` bg-color patterns, not `+/-` chars |
 | Kiro leaves `?25` unbalanced on exit              | chatterm should emit `\e[?25h` on PTY EOF as a fallback                                |
-| Claude title is only a 2-frame blink              | `agents.json` thinking prefix should be `["⠂","⠐"]` (2 of the previous 3 were wrong)   |
-| Codex title's 10 frames are unconfigured          | Add `osc_title_prefix: ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]` for codex             |
-| Kiro body spinner is a fast-path thinking trigger | Alongside `Thinking\.\.\.`, also trigger on animation chars `⠀/⠁/⠉/⠙/⠹/⢹/⣹/⣽/⣿`         |
-| Kiro permission dialog has box-drawing variant    | Detection rule: primary `\w+ requires approval`, fallback `Yes, single permission`     |
-| Claude "accept edits on" mode is invisible to us  | New state (or agent badge): match `⏵⏵ accept edits on`, surface "no-confirmation mode" |
-| Codex MCP startup can block prompt submission     | Fixtures must wait for `Starting MCP servers` to clear; chatterm tolerates long boot   |
+| Claude title is only a 2-frame blink              | ✅ `agents.json` thinking prefix updated to `["⠂","⠐"]` (cb8307d)                       |
+| Codex title's 10 frames are unconfigured          | ✅ `agents.json` now carries `osc_title_prefix: ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]` (cb8307d) |
+| Kiro body spinner is a fast-path thinking trigger | Alongside `Thinking\.\.\.`, also trigger on animation chars `⠀/⠁/⠉/⠙/⠹/⢹/⣹/⣽/⣿` (TBD)  |
+| Kiro permission dialog has box-drawing variant    | ✅ Rule `\w+ requires approval` landed in `agents.json` asking (cb8307d)                |
+| Claude "accept edits on" mode is invisible to us  | New state (or agent badge): match `⏵⏵ accept edits on`, surface "no-confirmation mode" (TBD) |
+| Codex prompts require bracketed-paste submit      | ✅ Fixtures wrap with `\e[200~...\e[201~\r`; template in codex-basic.toml (a0c7624)     |
 
-### 1.6 Asking-state proposal (2026-04-22 second sweep draft)
+### 1.6 Asking state (landed: cb8307d + d98df25 + 96fedbe + a0c7624)
 
-The current `StateDef` only has `thinking` / `idle`. When a permission dialog appears, Claude's title is still `✳ <task>` — which matches the idle rule — yet the user is blocked. This is **a bug in the current rules**, not just a missing feature. Proposal: add an optional `asking` field with priority `asking > thinking > idle`.
+The original `StateDef` had only `thinking` / `idle`. When a permission dialog appeared, Claude's title was still `✳ <task>` — matching the idle rule — yet the user was blocked. That was **a bug in the rules**, not just a missing feature. `cb8307d` landed an optional `asking` field with priority `asking > thinking > idle`; `96fedbe` made the Sidebar's asking status dot a fast red pulse to make the signal impossible to miss.
+
+The regex as shipped (all three agents' rules empirically verified in live captures):
 
 ```jsonc
 // Claude
@@ -172,25 +175,29 @@ The current `StateDef` only has `thinking` / `idle`. When a permission dialog ap
 // Kiro
 "asking": {
   "screen_regex": [
-    "requires approval",                     // Primary, verb-agnostic
+    "requires approval",                     // Primary, verb-agnostic (covers write / shell / web_fetch)
     "Yes, single permission",                // Backup 1
     "Trust, always allow in this session"    // Backup 2
   ]
 }
 
-// Codex (only the trust dialog so far; tool-permission chrome TBC)
+// Codex (d98df25 based on a user-supplied screenshot; a0c7624 re-verified via harness capture)
 "asking": {
   "screen_regex": [
-    "Do you trust the contents of this directory"
+    "Do you trust the contents of this directory",  // Startup trust dialog
+    "Would you like to run the following command",  // Runtime sandbox permission
+    "No, and tell Codex what to do differently"     // Option-3 fallback
   ]
 }
 ```
 
-**Required chrome-filter migration**: the current `chrome[]` list contains patterns that are actually asking chrome — leaving them in chrome will make preview extraction strip the very dialog text the user needs to see:
+The hook-API `"ask"` event (Codex / Claude hook integration) was also changed from "map to idle" to "map to asking" in cb8307d.
+
+**Unresolved chrome-filter migration**: the `chrome[]` list still contains patterns that make up asking chrome and would be stripped from preview if left there — so when `asking` fires, the Sidebar preview won't show the dialog text the user must see:
 
 - Claude: `"yes, i trust|no, exit"`, `"enter to confirm"`, `"quick safety check"`, `"be able to read, edit"`, `"security guide"`
 
-**Preview behaviour under `asking`** must be decoupled from chrome filtering: in `asking`, preview should **keep** the dialog text so the Sidebar clearly shows "you need to confirm something".
+These should move from chrome to asking.screen_regex (or the preview extractor in `pty.rs` should become asking-aware and skip chrome filtering while asking is active). Not done yet — see "Known issues" below.
 
 ---
 
@@ -286,7 +293,7 @@ timeout_ms = 90000
 
 [[step]]
 kind = "send"                    # write bytes to the PTY
-data = "1"                       # TOML string is sent as-is; use \u00XX for control bytes
+data = "1<CR>"                   # Named-key tokens supported — see §2.4.1 below
 
 [[step]]
 kind = "wait_idle"               # block until ms of byte silence
@@ -304,9 +311,37 @@ ms = 1000
 
 **Traps:**
 
-- TOML basic strings **disallow** literal `\x00–\x1F` bytes (except `\t`). For Ctrl-C / Ctrl-D etc. use `""` / `""`.
+- TOML basic strings **disallow** literal `\x00-\x1F` bytes (except `\t`). **Preferred workaround** is the named-key tokens below; if you insist on raw unicode, use `"\u001B"` for ESC, `"\u0003"` for Ctrl-C, `"\u0004"` for Ctrl-D.
 - `wait_regex` uses `regex::bytes` with an automatic `(?-u)` prefix so **byte-level** matching works: `\\xe2\\x9c\\xb3` reliably hits the three UTF-8 bytes of `✳`. If you want to match multibyte characters, hex byte escapes are more robust than literal Unicode.
-- `send.data` is **not** double-unescaped. To send ESC for the shell's `printf` to interpret, write `"\\e[31m"` (after TOML parse, becomes the two chars `\e[31m`). To send a real ESC byte, write `"[31m"`.
+- `send.data` is **not** double-unescaped (except for named-key tokens). To send ESC for the shell's `printf` to interpret, write `"\\e[31m"` (after TOML parse, becomes the two chars `\e[31m`). To send a real ESC byte, use `"<ESC>[31m"`.
+
+#### 2.4.1 Named-key tokens (recommended)
+
+`send.data` supports the following angle-bracket-wrapped tokens; each expands to its raw byte before the send. These tokens **never appear in natural-language or shell text**, so no false-positive collisions with real prompts:
+
+| Token   | Byte | Meaning                       |
+| ------- | ---- | ----------------------------- |
+| `<ESC>` | 0x1B | ESC / any CSI leader byte     |
+| `<C-c>` | 0x03 | Ctrl-C (interrupt)            |
+| `<C-d>` | 0x04 | Ctrl-D (EOT)                  |
+| `<CR>`  | 0x0D | Carriage Return               |
+| `<LF>`  | 0x0A | Line Feed                     |
+| `<TAB>` | 0x09 | Tab                           |
+| `<BS>`  | 0x08 | Backspace                     |
+
+Examples: close dialog `<ESC>`, interrupt `<C-c>`, exit TUI `<C-d>`, explicit newline `<LF>`.
+
+#### 2.4.2 Codex-specific: bracketed-paste submit
+
+**Codex pushes Kitty keyboard flag 7 at startup**, which means plain `\r` through the keystroke path will not submit (see §1.3). Every prompt in a Codex fixture therefore needs to be wrapped in bracketed paste:
+
+```toml
+[[step]]
+kind = "send"
+data = "<ESC>[200~say hi in one word<ESC>[201~\r"
+```
+
+Crossterm's paste event channel is orthogonal to the keystroke path, and the trailing `\r` after paste-end is accepted as submit. Claude / Kiro don't need this — `"say hi\r"` works directly. `codex-basic.toml` and `codex-permission-matrix.toml` are the reference templates.
 
 ### 2.5 ANSI bucket taxonomy
 
@@ -438,6 +473,7 @@ Focus on:
 - **Presence of `?2026`**: if yes, the agent relies on synchronized updates and chatterm's renderer must handle it.
 - **Stable text marker for permission / confirmation dialogs**: find a sentence that doesn't change with the specific prompt (e.g., `Do you want to proceed?`).
 - **Thinking / waiting marker**: may not be in the title — could be body text like Kiro's `Thinking... (esc to cancel)`.
+- **Kitty keyboard flag push (`\e[>Nu`)**: if you see this sequence in the startup bytes (e.g., Codex's `\e[>7u`), the agent is very likely using crossterm/ratatui with progressive keyboard enhancement — **plain `\r` may not register as Enter**. If your first prompt step never triggers a title animation, this is almost certainly why. Fix: wrap prompts in bracketed paste (`<ESC>[200~...<ESC>[201~\r`), see §2.4.2.
 
 ### Step 4: Tighten with `wait_regex`
 
@@ -520,3 +556,5 @@ A `capture diff` subcommand to automate this is planned; for now it's jq + diff.
 - No `capture diff` / `capture baseline` subcommand yet for regression assertions. `jq` works but is tedious.
 - `cast.json` goes through `String::from_utf8_lossy`, so a rare UTF-8 split across a chunk boundary can show `�`. Fine for demo replay, not a source of truth for analysis.
 - Agent fixtures produce real side effects (creating files in cwd, editing files, calling APIs). Always run in a disposable sandbox directory.
+- Codex fixtures must manually wrap each prompt in bracketed paste (`<ESC>[200~...<ESC>[201~\r`). A nicer approach would be for the recorder to auto-wrap when `agent = "codex"`, but that isn't implemented — explicit wrapping keeps the rule visible.
+- `chrome[]` still contains several trust / safety-dialog texts that get stripped from preview (see the tail of §1.6). Under `asking`, the Sidebar preview therefore shows nothing. Fixing this needs a change in `pty.rs` preview extraction (make it asking-aware and skip chrome filtering while asking is active) or a migration of those patterns into `asking.screen_regex`.
