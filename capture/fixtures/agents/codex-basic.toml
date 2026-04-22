@@ -1,0 +1,50 @@
+# Minimal Codex capture — baseline chrome + one AI response.
+#
+# Submit convention for Codex:
+#   <ESC>[200~<prompt><ESC>[201~<CR>
+# Bracketed-paste wrap + trailing CR. Codex pushes Kitty keyboard flag 7
+# on startup which disambiguates the keystroke path; paste events go
+# through a separate crossterm channel that still honors the trailing \r
+# as submit. This is the only encoding that reliably submits — plain \r,
+# \n, \e[13u, \e[13;1u, \e[13;1:1u, etc. all fail.
+
+agent = "codex"
+case = "basic"
+command = ["codex"]
+cwd = "/tmp/chatterm-matrix/trusted"
+cols = 140
+rows = 40
+idle_ms_default = 10000
+timeout_ms = 240000
+
+[[step]]
+kind = "wait_idle"
+ms = 6000
+
+# Ack startup trust dialog with a non-empty answer. An empty \r in compose
+# would be treated as newline insertion. Here codex is still in its
+# startup/trust state, so \r selects the default (Yes, continue).
+[[step]]
+kind = "send"
+data = "\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 5000
+
+# Prompt via bracketed paste.
+[[step]]
+kind = "send"
+data = "<ESC>[200~say hi in one word<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 45000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 4000

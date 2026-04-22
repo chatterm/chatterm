@@ -1,0 +1,98 @@
+# Probes Claude across three permission dimensions in one session:
+# (a) out-of-cwd write, (b) network fetch, (c) destructive rm. Previously
+# we only probed the single-file-edit and in-cwd bash paths.
+#
+# No wait_regex — we don't know the target chrome text, that's what we're
+# trying to learn. Long idle windows to let Claude think through each op.
+
+agent = "claude"
+case = "permission-matrix"
+command = ["claude"]
+cwd = "/tmp/chatterm-matrix/trusted"
+cols = 140
+rows = 40
+idle_ms_default = 10000
+timeout_ms = 600000
+
+# Claude in a fresh cwd may spend time on trust / initial scan before the
+# idle marker shows. wait_idle is more robust than waiting for a specific
+# title transition we can't guarantee on first run.
+[[step]]
+kind = "wait_idle"
+ms = 10000
+
+# (a) Out-of-cwd write.
+[[step]]
+kind = "send"
+data = "use bash to run: touch /tmp/chatterm-matrix/outer/from-claude.txt\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 45000
+
+# Whatever dialog appeared, deny so we don't need to clean up. 3 = No.
+[[step]]
+kind = "send"
+data = "3"
+
+[[step]]
+kind = "wait_idle"
+ms = 8000
+
+[[step]]
+kind = "send"
+data = "never mind, continue\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 20000
+
+# (b) Network fetch — Claude has a WebFetch tool.
+[[step]]
+kind = "send"
+data = "use WebFetch to fetch https://example.com/robots.txt and summarize\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 60000
+
+[[step]]
+kind = "send"
+data = "3"
+
+[[step]]
+kind = "wait_idle"
+ms = 5000
+
+[[step]]
+kind = "send"
+data = "skip that, next task\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 15000
+
+# (c) Destructive rm.
+[[step]]
+kind = "send"
+data = "use bash to run: rm -rf /tmp/chatterm-matrix/nested\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 45000
+
+[[step]]
+kind = "send"
+data = "3"
+
+[[step]]
+kind = "wait_idle"
+ms = 8000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000

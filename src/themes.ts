@@ -55,6 +55,7 @@ export function deriveUI(t: TerminalTheme) {
     "--ansi-bright-magenta": t.brightMagenta, "--ansi-bright-cyan": t.brightCyan,
     "--status-running": t.cyan,
     "--status-error": t.red, "--status-done": t.blue, "--status-idle": lighten(t.brightBlack, -20),
+    "--status-asking": t.brightRed || t.red,
     "--av-1": t.cyan, "--av-2": t.blue, "--av-3": t.magenta, "--av-4": t.yellow,
     "--av-5": lighten(t.red, 30), "--av-6": lighten(t.cyan, 40),
     "--av-7": t.green, "--av-8": t.red,

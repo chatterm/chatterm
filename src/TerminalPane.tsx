@@ -153,12 +153,14 @@ function HeaderBtn({ children, onClick, active, title }: { children: React.React
   );
 }
 
-function StatusPill({ status }: { status: SessionStatus }) {
+function StatusPill({ status, asking }: { status: SessionStatus; asking?: boolean }) {
+  const color = asking ? "var(--status-asking)" : statusColor(status);
+  const label = asking ? "Asking" : statusLabel(status);
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor(status), display: "inline-block" }}
-        className={status === "running" ? "pulse-running" : ""} />
-      <span style={{ color: statusColor(status), fontWeight: 500 }}>{statusLabel(status)}</span>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block" }}
+        className={asking ? "pulse-asking" : status === "running" ? "pulse-running" : ""} />
+      <span style={{ color, fontWeight: 500 }}>{label}</span>
     </span>
   );
 }
@@ -199,14 +201,14 @@ export default function TerminalPane({ session, onSend, onTogglePin, onToggleMut
         display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
         borderBottom: "1px solid var(--border)", flex: "0 0 auto",
       }}>
-        <Avatar av={session.avatar} size={30} status={session.status} group={session.avatar.group} />
+        <Avatar av={session.avatar} size={30} status={session.status} asking={session.asking} group={session.avatar.group} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>{session.name}</div>
             <KindIcon kind={session.kind} style={{ color: "var(--text-mute)" }} />
           </div>
           <div className="mono" style={{ fontSize: 11, color: "var(--text-dim)", display: "flex", gap: 10, alignItems: "center", marginTop: 1 }}>
-            <StatusPill status={session.status} />
+            <StatusPill status={session.status} asking={session.asking} />
             {session.cwd && <span>{session.cwd}</span>}
             {session.branch && session.branch !== "—" && <span style={{ color: "var(--ansi-cyan)" }}>⎇ {session.branch}</span>}
             {session.model && <span style={{ color: "var(--ansi-magenta)" }}>{session.model}</span>}

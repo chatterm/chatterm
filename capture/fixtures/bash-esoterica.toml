@@ -1,0 +1,50 @@
+# Probes the long-tail categories that typical shell output doesn't exercise:
+# scroll regions, DSR, insert-char/insert-line, OSC colors, shell integration
+# markers, and a DCS passthrough. All via bash printf so no external TUI needed.
+agent = "bash"
+case = "esoterica"
+command = ["/bin/bash", "--noprofile", "--norc"]
+cols = 120
+rows = 30
+idle_ms_default = 400
+
+# csi_scroll: DECSTBM (set top/bottom margins) + SU (scroll up) + SD (scroll down)
+[[step]]
+kind = "send"
+data = "printf '\\e[5;25r\\e[3S\\e[2T\\e[r'\r"
+
+# csi_report: DSR-status + DSR-cursor-position queries.
+# Real terminals reply over stdin — here nothing listens, we only count emission.
+[[step]]
+kind = "send"
+data = "printf '\\e[5n\\e[6n\\e[0c'\r"
+
+# csi_edit (ICH/IL) + csi_other (TBC/CHT/CBT) + ESC-dispatch (DECSC/DECRC).
+[[step]]
+kind = "send"
+data = "printf 'abc\\e[3@DEF\\e[2Lxx\\e[g\\e[2I\\e[1Z\\e7stuff\\e8'\r"
+
+# osc_color: OSC 10 (default fg), OSC 11 (default bg), OSC 4 (palette entry).
+[[step]]
+kind = "send"
+data = "printf '\\e]10;#ff8800\\a\\e]11;#101018\\a\\e]4;1;rgb:ff/00/00\\a'\r"
+
+# osc_shell_integration: OSC 133 A/B/C/D prompt markers (iTerm/VSCode convention).
+[[step]]
+kind = "send"
+data = "printf '\\e]133;A\\a\\e]133;B\\a\\e]133;C\\a\\e]133;D;0\\a'\r"
+
+# osc_other: an unknown OSC code — anything not in the known-list falls here.
+[[step]]
+kind = "send"
+data = "printf '\\e]666;custom-payload\\a'\r"
+
+# dcs: ESC P ... ESC \\  (ST). Content is opaque — vte buckets it as one event.
+# Using the sixel intro as a recognizable shape even though we send no pixels.
+[[step]]
+kind = "send"
+data = "printf '\\ePq\"1;1;8;8\\e\\\\'\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 500

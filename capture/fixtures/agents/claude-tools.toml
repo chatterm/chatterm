@@ -1,0 +1,101 @@
+# Tool-heavy flow: Read + Grep (no permission) + Edit approve (diff render)
+# + Edit deny (deny-path chrome).
+#
+# Sandbox prep (run before this fixture):
+#   mkdir -p /tmp/chatterm-capture-sandbox
+#   echo 'hello from chatterm' > /tmp/chatterm-capture-sandbox/hello.txt
+#   cat > /tmp/chatterm-capture-sandbox/fizz_broken.py <<'EOF'
+#   def fizzbuzz(n):
+#       for i in range(n):
+#           # TODO: implement
+#           pass
+#   EOF
+
+agent = "claude"
+case = "tools"
+command = ["claude"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 8000
+timeout_ms = 300000
+
+# 1. Startup chrome.
+[[step]]
+kind = "wait_regex"
+pattern = "\\xe2\\x9c\\xb3 Claude Code"
+timeout_ms = 20000
+
+[[step]]
+kind = "wait_idle"
+ms = 1000
+
+# 2. Read + Grep in one prompt — both are typically auto-approved so this
+#    captures the tool result rendering without a permission interrupt.
+[[step]]
+kind = "send"
+data = "read hello.txt and also grep for TODO in this directory\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 15000
+
+# 3. Ask for an Edit — this should trigger the Edit/Write permission dialog,
+#    which usually includes a full diff hunk inline before the Yes/No options.
+[[step]]
+kind = "send"
+data = "fill in the fizzbuzz implementation in fizz_broken.py\r"
+
+[[step]]
+kind = "wait_regex"
+pattern = "Do you want"
+timeout_ms = 90000
+
+# Let the diff finish rendering before we answer.
+[[step]]
+kind = "wait_idle"
+ms = 1500
+
+# 4. Approve the edit.
+[[step]]
+kind = "send"
+data = "1"
+
+[[step]]
+kind = "wait_idle"
+ms = 12000
+
+# 5. Now the deny path. Ask for a destructive-sounding op so we definitely
+#    trigger the permission prompt and we can press "3. No" to see its chrome.
+[[step]]
+kind = "send"
+data = "use bash to run: rm fizz_broken.py\r"
+
+[[step]]
+kind = "wait_regex"
+pattern = "Do you want"
+timeout_ms = 90000
+
+[[step]]
+kind = "wait_idle"
+ms = 1000
+
+# 6. Deny — press 3.
+[[step]]
+kind = "send"
+data = "3"
+
+# Claude typically follows a denial with a short plain-text response; wait
+# for idle so we capture that too.
+[[step]]
+kind = "wait_idle"
+ms = 10000
+
+# 7. Exit.
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000

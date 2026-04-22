@@ -28,6 +28,17 @@ export interface Session {
   kind: SessionKind;
   avatar: SessionAvatar;
   status: SessionStatus;
+  // Separate from `status` so activity (avatar pulse) and semantic thinking
+  // state (sidebar typing-dot indicator) are independent signals. `status`
+  // is driven by PTY output activity + 3s idle timer; `thinking` is driven
+  // by backend vscreen regex matching / hook events. The thinking regex can
+  // miss or mis-fire, but status stays reliable.
+  thinking?: boolean;
+  // Set when the agent is blocked on a confirmation dialog (permission
+  // prompt, trust dialog, etc). Mutually exclusive with `thinking` — the
+  // agent is NOT making progress, it's waiting for the user. Drives a
+  // distinct (red) pulse separate from running's avatar-colour pulse.
+  asking?: boolean;
   unread: number;
   pinned: boolean;
   muted: boolean;

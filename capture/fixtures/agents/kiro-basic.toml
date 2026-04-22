@@ -1,0 +1,57 @@
+# First-contact fixture for Kiro CLI chat (AWS).
+#
+# Same wait_idle-only approach as codex-basic: we're learning the chrome, not
+# validating a known shape.
+
+agent = "kiro"
+case = "basic"
+command = ["kiro-cli", "chat"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 8000
+timeout_ms = 240000
+
+[[step]]
+kind = "wait_idle"
+ms = 4000
+
+[[step]]
+kind = "send"
+data = "explain what a PTY is in one sentence\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 20000
+
+[[step]]
+kind = "send"
+data = "write a 5-line python fizzbuzz\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 25000
+
+[[step]]
+kind = "send"
+data = "create a file hello-kiro.txt containing 'hi from kiro'\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "/quit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000
+
+[[step]]
+kind = "send"
+data = "\u0004"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

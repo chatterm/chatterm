@@ -1,0 +1,105 @@
+# Codex permission matrix — uses bracketed-paste submit (see codex-basic.toml
+# for the technique and why). Tries three sandbox-boundary probes to capture
+# the `Would you like to run the following command?` dialog chrome.
+#
+# Target paths are under HOME, not /tmp — Codex's default sandbox typically
+# allows /tmp but not $HOME, so writes / reads there trigger the dialog.
+
+agent = "codex"
+case = "permission-matrix"
+command = ["codex"]
+cwd = "/tmp/chatterm-matrix/trusted"
+cols = 140
+rows = 40
+idle_ms_default = 10000
+timeout_ms = 420000
+
+[[step]]
+kind = "wait_idle"
+ms = 6000
+
+# Ack the startup trust dialog (fresh-cwd first-run) with \r on the default.
+[[step]]
+kind = "send"
+data = "\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 5000
+
+# (a) Out-of-sandbox write — drop a file in $HOME.
+[[step]]
+kind = "send"
+data = "<ESC>[200~use bash to run: touch /Users/lijie/codex-probe-a.txt<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 60000
+
+# Deny the dialog via Esc (captured as one of the option-3 paths).
+[[step]]
+kind = "send"
+data = "<ESC>"
+
+[[step]]
+kind = "wait_idle"
+ms = 6000
+
+# Conversational redirect so codex moves past the denied op.
+[[step]]
+kind = "send"
+data = "<ESC>[200~move on to the next task<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 20000
+
+# (b) Network probe.
+[[step]]
+kind = "send"
+data = "<ESC>[200~run this: curl -sS https://example.com/robots.txt<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 60000
+
+[[step]]
+kind = "send"
+data = "<ESC>"
+
+[[step]]
+kind = "wait_idle"
+ms = 6000
+
+[[step]]
+kind = "send"
+data = "<ESC>[200~skip that, next task<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 20000
+
+# (c) Delete outside sandbox.
+[[step]]
+kind = "send"
+data = "<ESC>[200~run this: rm /Users/lijie/codex-probe-a.txt<ESC>[201~\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 60000
+
+[[step]]
+kind = "send"
+data = "<ESC>"
+
+[[step]]
+kind = "wait_idle"
+ms = 8000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 4000

@@ -15,7 +15,7 @@ function shortCwd(cwd: string): string {
   return `${seg}$`;
 }
 
-export function Avatar({ av, size = 36, status, group }: { av: SessionAvatar; size?: number; status?: SessionStatus; group?: boolean }) {
+export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAvatar; size?: number; status?: SessionStatus; asking?: boolean; group?: boolean }) {
   const font = Math.round(size * 0.4);
   return (
     <div style={{ position: "relative", width: size, height: size, flex: `0 0 ${size}px` }}>
@@ -34,10 +34,17 @@ export function Avatar({ av, size = 36, status, group }: { av: SessionAvatar; si
         }}>3</div>
       )}
       {status && !group && (
-        <div title={status} style={{
+        <div title={asking ? "asking" : status} style={{
           position: "absolute", right: -2, bottom: -2, width: 10, height: 10, borderRadius: "50%",
-          background: statusColor(status), border: "2px solid var(--sidebar-bg)",
-        }} className={status === "running" ? "pulse-running" : ""} />
+          // Three-way priority: asking (user blocked) > running (output activity) > semantic status.
+          // Running uses the avatar's own color so the pulse ring inherits it via `currentColor`;
+          // asking overrides to red so a blocked agent can't be confused with an active one.
+          background: asking
+            ? "var(--status-asking)"
+            : status === "running" ? av.color : statusColor(status),
+          color: av.color,
+          border: "2px solid var(--sidebar-bg)",
+        }} className={asking ? "pulse-asking" : status === "running" ? "pulse-running" : ""} />
       )}
     </div>
   );
@@ -72,7 +79,7 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <Avatar av={s.avatar} status={s.status} group={s.avatar.group} />
+      <Avatar av={s.avatar} status={s.status} asking={s.asking} group={s.avatar.group} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
           <div style={{
@@ -128,7 +135,7 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             flex: 1, minWidth: 0, fontWeight: 400,
           }}>
-            {s.status === "running" && !s.unread ? (
+            {s.thinking && !s.unread ? (
               <span style={{ color: "var(--status-running)" }}>
                 <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
                 <span style={{ marginLeft: 6, color: "var(--text-dim)" }}>{truncate(s.lastPreview || (s.cwd ? shortCwd(s.cwd) : ""), 28)}</span>

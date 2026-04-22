@@ -1,0 +1,24 @@
+# Probes: DECSET 1049 (alt-screen enter/exit), via `less` quit.
+agent = "bash"
+case = "alt-screen"
+command = ["/bin/bash", "--noprofile", "--norc"]
+cols = 120
+rows = 30
+idle_ms_default = 400
+
+[[step]]
+kind = "send"
+data = "echo 'one\\ntwo\\nthree' | less -R\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 600
+
+[[step]]
+# q to exit less — triggers DECRST 1049 (alt-screen leave).
+kind = "send"
+data = "q"
+
+[[step]]
+kind = "wait_idle"
+ms = 500

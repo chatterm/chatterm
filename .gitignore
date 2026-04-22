@@ -5,6 +5,10 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+capture/target/
+
+# Capture artifacts: real PTY recordings (regenerable, contain prompt/response text)
+capture/artifacts/
 
 # OS
 .DS_Store

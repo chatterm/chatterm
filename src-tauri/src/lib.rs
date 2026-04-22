@@ -174,8 +174,12 @@ fn dispatch_pipe_line(app: &AppHandle, line: &str) {
         if !body.is_empty() {
             let (state, preview) = match msg_type {
                 "reply" => (None, Some(body)),
-                "done" => (Some("idle".to_string()), None),
-                "ask" => (Some("idle".to_string()), None),
+                // Forward body as preview so the Sidebar unread counter bumps
+                // even for agents whose Stop hook carries no assistant message
+                // (Kiro sometimes lands here; the body is the hook bridge's
+                // fallback placeholder in that case).
+                "done" => (Some("idle".to_string()), Some(body.clone())),
+                "ask" => (Some("asking".to_string()), None),
                 "tool" => (Some("thinking".to_string()), None),
                 _ => (None, None),
             };

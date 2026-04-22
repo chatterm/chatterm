@@ -19,8 +19,17 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const ref = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const composing = useRef(false);
   useEffect(() => { ref.current?.focus(); }, []);
+
+  // Keep the highlighted row visible when arrow-key navigation walks past the
+  // scrollable container's edge. `block: "nearest"` scrolls the minimum amount
+  // and is a no-op when the row is already in view.
+  useEffect(() => {
+    const row = listRef.current?.children[idx] as HTMLElement | undefined;
+    row?.scrollIntoView({ block: "nearest" });
+  }, [idx]);
 
   const results = useMemo(() => {
     if (!q.trim()) return sessions;
@@ -55,7 +64,7 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
           />
           <span className="mono" style={{ fontSize: 10, color: "var(--text-mute)", padding: "2px 6px", background: "#2d2d30", borderRadius: 3 }}>esc</span>
         </div>
-        <div style={{ maxHeight: 400, overflowY: "auto" }}>
+        <div ref={listRef} style={{ maxHeight: 400, overflowY: "auto" }}>
           {results.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "var(--text-mute)", fontSize: 13 }}>No matches.</div>}
           {results.map((s, i) => (
             <div key={s.id} onMouseEnter={() => setIdx(i)} onClick={() => { onSelect(s.id); onClose(); }}

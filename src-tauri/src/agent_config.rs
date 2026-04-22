@@ -26,9 +26,17 @@ struct DetectDef {
 }
 
 #[derive(Debug, Deserialize)]
-struct StateDef { thinking: StateMatch, idle: StateMatch }
+struct StateDef {
+    thinking: StateMatch,
+    idle: StateMatch,
+    /// Optional: agent is blocked waiting for a specific user choice (permission
+    /// dialogs, trust prompts, menu selection). When matched, this overrides
+    /// both thinking and idle — priority is asking > thinking > idle.
+    #[serde(default)]
+    asking: Option<StateMatch>,
+}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct StateMatch {
     #[serde(default)] osc_title_prefix: Vec<String>,
     #[serde(default)] screen_regex: Vec<String>,
@@ -46,6 +54,8 @@ pub struct AgentConfig {
     thinking_screen: Vec<Regex>,
     idle_osc_prefix: Vec<String>,
     idle_screen: Vec<Regex>,
+    asking_osc_prefix: Vec<String>,
+    asking_screen: Vec<Regex>,
     chrome_patterns: Vec<Regex>,
     pub reply_prefix: Vec<String>,
     pub input_prefix: Vec<String>,
@@ -59,6 +69,7 @@ pub fn agents() -> &'static Vec<AgentConfig> {
         let json = include_str!("../agents.json");
         let file: AgentsFile = serde_json::from_str(json).expect("Failed to parse agents.json");
         file.agents.into_iter().map(|a| {
+            let asking = a.state.asking.unwrap_or_default();
             AgentConfig {
                 id: a.id, name: a.name, mono: a.mono, color: a.color,
                 detect_osc: a.detect.osc_title_contains,
@@ -67,6 +78,8 @@ pub fn agents() -> &'static Vec<AgentConfig> {
                 thinking_screen: compile_regexes(&a.state.thinking.screen_regex),
                 idle_osc_prefix: a.state.idle.osc_title_prefix,
                 idle_screen: compile_regexes(&a.state.idle.screen_regex),
+                asking_osc_prefix: asking.osc_title_prefix,
+                asking_screen: compile_regexes(&asking.screen_regex),
                 chrome_patterns: compile_regexes(&a.chrome),
                 reply_prefix: a.reply_prefix,
                 input_prefix: a.input_prefix,
@@ -91,6 +104,11 @@ impl AgentConfig {
     }
 
     pub fn detect_state_from_title(&self, title: &str) -> Option<&'static str> {
+        // Priority: asking > thinking > idle. Asking rarely rides on title (most
+        // agents express dialogs in body), but honor it for parity with screen.
+        for p in &self.asking_osc_prefix {
+            if title.starts_with(p) { return Some("asking"); }
+        }
         for p in &self.thinking_osc_prefix {
             if title.starts_with(p) { return Some("thinking"); }
         }
@@ -101,7 +119,16 @@ impl AgentConfig {
     }
 
     pub fn detect_state_from_screen(&self, rows: &[String]) -> Option<&'static str> {
-        // Thinking takes priority: scan ALL rows for thinking indicators first
+        // Asking has highest priority — a permission dialog blocks the user
+        // regardless of whether the agent also looks "idle" by title.
+        for row in rows.iter() {
+            let t = row.trim();
+            if t.is_empty() { continue; }
+            for re in &self.asking_screen {
+                if re.is_match(t) { return Some("asking"); }
+            }
+        }
+        // Thinking: scan ALL rows for thinking indicators
         for row in rows.iter() {
             let t = row.trim();
             if t.is_empty() { continue; }
@@ -109,7 +136,7 @@ impl AgentConfig {
                 if re.is_match(t) { return Some("thinking"); }
             }
         }
-        // No thinking found: check for idle (bottom-up)
+        // Idle: scan bottom-up (prompt is usually near the bottom)
         for row in rows.iter().rev() {
             let t = row.trim();
             if t.is_empty() { continue; }
@@ -180,12 +207,58 @@ mod tests {
         assert_eq!(claude.detect_state_from_screen(&["❯".to_string()]), Some("idle"));
     }
     #[test]
+    fn test_claude_title_braille() {
+        let agents = agents();
+        let claude = agents.iter().find(|a| a.id == "claude").unwrap();
+        // Both braille frames in the real capture cycle map to thinking.
+        assert_eq!(claude.detect_state_from_title("⠂ Claude Code"), Some("thinking"));
+        assert_eq!(claude.detect_state_from_title("⠐ Claude Code"), Some("thinking"));
+        assert_eq!(claude.detect_state_from_title("✳ Claude Code"), Some("idle"));
+    }
+    #[test]
+    fn test_claude_asking_detection() {
+        let agents = agents();
+        let claude = agents.iter().find(|a| a.id == "claude").unwrap();
+        // Asking must win even when other rows would trigger thinking/idle.
+        // Anchor is the `❯ 1. Yes` row — real dialog has it; AI reply text
+        // that merely mentions "Do you want to proceed?" does not.
+        let dialog = vec![
+            "✶ Crafting…".to_string(),
+            "Do you want to proceed?".to_string(),
+            "❯ 1. Yes".to_string(),
+        ];
+        assert_eq!(claude.detect_state_from_screen(&dialog), Some("asking"));
+        // Footer-only row also triggers (e.g., when the question has scrolled
+        // off the top of the viewport but the option block is still visible).
+        assert_eq!(claude.detect_state_from_screen(&["Esc to cancel · Tab to amend · ctrl+e to explain".to_string()]), Some("asking"));
+        // Deny / interrupt chrome — `⏺` prefix is the structural anchor.
+        assert_eq!(claude.detect_state_from_screen(&["⏺ Interrupted · What should Claude do instead?".to_string()]), Some("asking"));
+
+        // False-positive regression guard: prose that merely mentions the
+        // dialog phrases must NOT flip state to asking.
+        let prose = vec![
+            "Me: If Claude asks \"Do you want to proceed?\" in a reply,".to_string(),
+            "the state detector should not confuse it with a real dialog.".to_string(),
+            "This is regression protection for self-referential chat.".to_string(),
+        ];
+        assert_ne!(claude.detect_state_from_screen(&prose), Some("asking"));
+    }
+    #[test]
     fn test_kiro_thinking_detection() {
         let agents = agents();
         let kiro = agents.iter().find(|a| a.id == "kiro").unwrap();
         assert_eq!(kiro.detect_state_from_screen(&["⠀ Thinking... (esc to cancel)".to_string()]), Some("thinking"));
         assert_eq!(kiro.detect_state_from_screen(&["Kiro is working · type to queue".to_string()]), Some("thinking"));
         assert_eq!(kiro.detect_state_from_screen(&["Kiro · auto · ◔ 5%".to_string()]), Some("idle"));
+    }
+    #[test]
+    fn test_kiro_asking_detection() {
+        let agents = agents();
+        let kiro = agents.iter().find(|a| a.id == "kiro").unwrap();
+        // verb varies; primary rule is "<verb> requires approval"
+        assert_eq!(kiro.detect_state_from_screen(&["write requires approval".to_string()]), Some("asking"));
+        assert_eq!(kiro.detect_state_from_screen(&["shell requires approval".to_string()]), Some("asking"));
+        assert_eq!(kiro.detect_state_from_screen(&["❯ Yes, single permission".to_string()]), Some("asking"));
     }
     #[test]
     fn test_codex_thinking_detection() {
@@ -197,5 +270,29 @@ mod tests {
         assert_eq!(codex.detect_state_from_screen(&["● Waiting for background terminal (2m 10s)".to_string()]), Some("thinking"));
         assert_eq!(codex.detect_state_from_screen(&["Waiting for background terminal (1m 21s)".to_string()]), Some("thinking"));
         assert_eq!(codex.detect_state_from_screen(&["gpt-5.4 xhigh · ~/project".to_string()]), Some("idle"));
+    }
+    #[test]
+    fn test_codex_title_braille_cycle() {
+        let agents = agents();
+        let codex = agents.iter().find(|a| a.id == "codex").unwrap();
+        // All 10 frames of the title spinner should map to thinking.
+        for frame in ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] {
+            let title = format!("{} chatterm-capture-sandbox", frame);
+            assert_eq!(codex.detect_state_from_title(&title), Some("thinking"),
+                "frame {} should be thinking", frame);
+        }
+    }
+    #[test]
+    fn test_codex_asking_detection() {
+        let agents = agents();
+        let codex = agents.iter().find(|a| a.id == "codex").unwrap();
+        // Startup trust dialog.
+        assert_eq!(codex.detect_state_from_screen(&["Do you trust the contents of this directory?".to_string()]), Some("asking"));
+        // Runtime sandbox-permission dialog (fires when Codex wants to run a
+        // command that its auto-approval rules haven't covered).
+        assert_eq!(codex.detect_state_from_screen(&["Would you like to run the following command?".to_string()]), Some("asking"));
+        // Footer of the same dialog — sticks around even if the top heading
+        // scrolls off-screen in narrow layouts.
+        assert_eq!(codex.detect_state_from_screen(&["3. No, and tell Codex what to do differently (esc)".to_string()]), Some("asking"));
     }
 }

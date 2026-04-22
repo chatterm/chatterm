@@ -1,0 +1,75 @@
+# Tests whether pressing "2. Yes, and always allow..." on the first Bash
+# permission skips the dialog on a second same-class Bash invocation in the
+# same session. Directly informs whether asking-state needs to worry about
+# consecutive requests being silently auto-approved.
+#
+# Sandbox prep: /tmp/chatterm-capture-sandbox/ must exist; content is fine.
+
+agent = "claude"
+case = "always-allow"
+command = ["claude"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 8000
+timeout_ms = 300000
+
+[[step]]
+kind = "wait_regex"
+pattern = "\\xe2\\x9c\\xb3 Claude Code"
+timeout_ms = 20000
+
+[[step]]
+kind = "wait_idle"
+ms = 1000
+
+# First Bash: touch a file. Expect permission dialog.
+[[step]]
+kind = "send"
+data = "use bash to run: touch probe1.txt\r"
+
+[[step]]
+kind = "wait_regex"
+pattern = "Do you want"
+timeout_ms = 90000
+
+[[step]]
+kind = "wait_idle"
+ms = 500
+
+# Press 2 = "Yes, and always allow access to <cwd>/ from this project".
+[[step]]
+kind = "send"
+data = "2"
+
+[[step]]
+kind = "wait_idle"
+ms = 12000
+
+# Second Bash: touch a different file. If "always allow" works,
+# this should run without a permission dialog.
+[[step]]
+kind = "send"
+data = "use bash to run: touch probe2.txt\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 20000
+
+# Third: let's also try a DIFFERENT bash command class (rm). Is "always allow"
+# scoped to the specific command (touch) or all bash? Data matters.
+[[step]]
+kind = "send"
+data = "use bash to run: rm probe1.txt\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 25000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

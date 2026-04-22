@@ -17,11 +17,17 @@
         "thinking": {
           "osc_title_prefix": [
             "⠂",
-            "⠄",
-            "⠈"
+            "⠐"
           ],
           "screen_regex": [
             "^[✢✳✶✻✽]\\s+.+…"
+          ]
+        },
+        "asking": {
+          "screen_regex": [
+            "^❯ 1\\. Yes",
+            "^Esc to cancel · Tab to amend",
+            "^⏺ Interrupted · What should"
           ]
         },
         "idle": {
@@ -105,6 +111,13 @@
             "Kiro is working"
           ]
         },
+        "asking": {
+          "screen_regex": [
+            "\\w+ requires approval",
+            "Yes, single permission",
+            "Trust, always allow in this session"
+          ]
+        },
         "idle": {
           "screen_regex": [
             "^Kiro · "
@@ -159,10 +172,29 @@
       },
       "state": {
         "thinking": {
+          "osc_title_prefix": [
+            "⠋",
+            "⠙",
+            "⠹",
+            "⠸",
+            "⠼",
+            "⠴",
+            "⠦",
+            "⠧",
+            "⠇",
+            "⠏"
+          ],
           "screen_regex": [
             "• Working \\(",
             "• Starting MCP",
             "Waiting for background terminal"
+          ]
+        },
+        "asking": {
+          "screen_regex": [
+            "Do you trust the contents of this directory",
+            "Would you like to run the following command",
+            "No, and tell Codex what to do differently"
           ]
         },
         "idle": {

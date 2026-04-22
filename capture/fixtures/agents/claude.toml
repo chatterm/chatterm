@@ -1,0 +1,91 @@
+# Template for probing a real CLI agent.
+#
+# This lives under fixtures/agents/ instead of fixtures/ so `capture coverage
+# fixtures/` does *not* pick it up by default — real agents burn tokens and
+# take seconds per run. Opt in explicitly:
+#
+#   capture coverage fixtures/agents/
+#   capture run      fixtures/agents/claude.toml
+#
+# Adjust `command`, `cwd`, and the prompts before running. `wait_regex` is
+# preferable to `wait_idle` because agents stream for a while; match on a
+# marker the TUI reliably emits (its own OSC title update, a prompt glyph,
+# etc.) and anchor on bytes not characters.
+
+agent = "claude"
+case = "mixed-probe"
+command = ["claude"]
+# Sandbox — fresh dir means the agent's cwd tracking / file scan has nothing
+# to chew on and won't perturb your working tree.
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+# Defaults tuned for streaming LLM output; individual steps override as needed.
+idle_ms_default = 2500
+timeout_ms = 120000
+
+# --- 1. Startup: capture the chrome the agent paints on first render.
+#     Probes: osc_title (OSC 0/2), csi_mode_set (alt-screen 1049, bracketed
+#     paste 2004, mouse 1006/1002), csi_cursor/erase for the redraw.
+[[step]]
+kind = "wait_idle"
+ms = 2000
+
+# --- 2. Plain-text prompt to see baseline streaming.
+#     Probes: csi_sgr (syntax highlighting), print volume, c0 (LF/CR).
+[[step]]
+kind = "send"
+data = "explain what a PTY is in one sentence\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 8000
+
+# --- 3. Code-block prompt — usually triggers heavier SGR + box-drawing.
+#     Probes: csi_sgr with 256-color / truecolor, print with box chars.
+[[step]]
+kind = "send"
+data = "write a 5-line python fizzbuzz\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 10000
+
+# --- 4. File-touching prompt — probes osc_hyperlink + osc_cwd if the agent
+#     emits them, plus its file-read/edit UI.
+[[step]]
+kind = "send"
+data = "create a file hello.txt with the text hi and show the path\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 10000
+
+# --- 5. Interrupt path — tests the agent's cancellation chrome. Many agents
+#     emit a transient state change that our `state` detector needs to track.
+[[step]]
+kind = "send"
+data = "write a long essay about terminals"
+
+# Brief window before interrupting so we get at least a few frames of output.
+[[step]]
+kind = "sleep"
+ms = 1500
+
+# Ctrl-C.
+[[step]]
+kind = "send"
+data = "\u0003"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000
+
+# --- 6. Graceful exit — captures DECRST 1049 / 2004 / mouse-disable on leave.
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

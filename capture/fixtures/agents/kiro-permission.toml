@@ -1,0 +1,60 @@
+# Tries to elicit Kiro's permission / confirmation chrome.
+#
+# Initial run didn't trigger any dialog — ask a tool-heavy task explicitly and
+# wait long enough.
+
+agent = "kiro"
+case = "permission"
+command = ["kiro-cli", "chat"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 10000
+timeout_ms = 240000
+
+[[step]]
+kind = "wait_idle"
+ms = 5000
+
+# File-touching request.
+[[step]]
+kind = "send"
+data = "create a file called kiro-probe.txt with the text hello-from-kiro\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 40000
+
+# Command execution request.
+[[step]]
+kind = "send"
+data = "run the command: ls -la in the current directory\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 40000
+
+# Destructive request.
+[[step]]
+kind = "send"
+data = "delete the file kiro-probe.txt using the rm command\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 40000
+
+[[step]]
+kind = "send"
+data = "/quit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000
+
+[[step]]
+kind = "send"
+data = "\u0004"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000
