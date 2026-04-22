@@ -144,9 +144,15 @@ export default function App() {
           }
         }
 
-        // Capture agent command from process detection
+        // Capture agent command — but only when it belongs to the session's
+        // current agent. Without this guard, a cross-agent match in the
+        // backend (e.g. detecting codex while session is still labelled kiro)
+        // could silently overwrite command with an unrelated process's args.
         if (command) {
-          (updates as any)._command = command;
+          const currentAgent = (s as any)._agent;
+          if (!currentAgent || !agent || agent === currentAgent) {
+            (updates as any)._command = command;
+          }
         }
 
         // Update cwd from hook
@@ -269,9 +275,11 @@ export default function App() {
         if (k === "n") { e.preventDefault(); handleNew(); }
       }
       if (e.key === "Escape") {
-        e.preventDefault(); e.stopPropagation();
-        if (themeOpen) { setThemeOpen(false); return; }
-        if (cmdkOpen) { setCmdkOpen(false); return; }
+        // Only swallow ESC when an overlay is actually open; otherwise let it
+        // bubble to xterm so vim / Kiro CLI / anything else in the terminal
+        // sees it.
+        if (themeOpen) { e.preventDefault(); e.stopPropagation(); setThemeOpen(false); return; }
+        if (cmdkOpen) { e.preventDefault(); e.stopPropagation(); setCmdkOpen(false); return; }
       }
     };
     window.addEventListener("keydown", handler, true); // capture phase

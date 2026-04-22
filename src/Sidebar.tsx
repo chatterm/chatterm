@@ -279,7 +279,7 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
         }}>Y</div>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "baseline", gap: 6 }}>
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Built for AI coding sessions.</div>
-          <div className="mono" style={{ fontSize: 10, color: "var(--text-mute)" }}>v0.1.0</div>
+          <div className="mono" style={{ fontSize: 10, color: "var(--text-mute)" }}>v{__APP_VERSION__}</div>
         </div>
         <Ic.settings style={{ color: "var(--text-dim)", cursor: "pointer" }} onClick={onSettings} />
       </div>
