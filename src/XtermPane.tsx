@@ -5,10 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
 import { PtyOutput, isMenuMod } from "./types";
-import { getCurrentTheme, toXtermTheme } from "./themes";
+import { getCurrentTheme, toXtermTheme, subscribeTheme } from "./themes";
 
 // Global cache: one Terminal instance per session, survives re-renders
-const termCache = new Map<string, { term: Terminal; fit: FitAddon; unlisten: UnlistenFn | null }>();
+const termCache = new Map<string, { term: Terminal; fit: FitAddon; unlisten: UnlistenFn | null; unsubTheme: () => void }>();
 
 function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
   let entry = termCache.get(sessionId);
@@ -61,7 +61,14 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
     if (e) e.unlisten = fn;
   });
 
-  const newEntry = { term, fit, unlisten };
+  // Live theme switches: tied to the terminal's cache lifetime, not the
+  // component mount. Otherwise the inactive session's term keeps its old
+  // palette when the user toggles theme from a different tab.
+  const unsubTheme = subscribeTheme((t) => {
+    term.options.theme = toXtermTheme(t);
+  });
+
+  const newEntry = { term, fit, unlisten, unsubTheme };
   termCache.set(sessionId, newEntry);
   return newEntry;
 }
@@ -114,6 +121,7 @@ export function destroyTerminal(sessionId: string) {
   const entry = termCache.get(sessionId);
   if (entry) {
     entry.unlisten?.();
+    entry.unsubTheme();
     entry.term.dispose();
     termCache.delete(sessionId);
   }
