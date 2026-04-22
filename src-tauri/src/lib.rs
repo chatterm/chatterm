@@ -231,10 +231,13 @@ fn start_fifo_listener(app: AppHandle) {
 
     std::thread::spawn(move || {
         let pipe_name = b"\\\\.\\pipe\\chatterm-hook\0";
+        // PIPE_ACCESS_INBOUND (0x1) — windows crate exposes this as
+        // FILE_FLAGS_AND_ATTRIBUTES which doesn't impl BitOr with the pipe
+        // flags, so we define it here until the crate fixes the type.
+        const PIPE_ACCESS_INBOUND: windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES =
+            windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0x0000_0001);
         loop {
-            // PIPE_ACCESS_INBOUND = 0x00000001
-            let open_mode = windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES(0x1)
-                | FILE_FLAG_FIRST_PIPE_INSTANCE;
+            let open_mode = PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE;
             let handle = unsafe {
                 CreateNamedPipeA(
                     PCSTR(pipe_name.as_ptr()),
