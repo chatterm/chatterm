@@ -209,7 +209,12 @@ fn start_fifo_listener(app: AppHandle) {
                     if !body.is_empty() {
                         let (state, preview) = match msg_type {
                             "reply" => (None, Some(body)),
-                            "done" => (Some("idle".to_string()), None),
+                            // Body is also forwarded as preview so the frontend
+                            // unread counter bumps even for agents like Kiro
+                            // whose Stop hook has no last_assistant_message —
+                            // the fallback "Session complete" body still looks
+                            // like a new message from the Sidebar's perspective.
+                            "done" => (Some("idle".to_string()), Some(body.clone())),
                             "ask" => (Some("asking".to_string()), None),
                             "tool" => (Some("thinking".to_string()), None),
                             _ => (None, None),

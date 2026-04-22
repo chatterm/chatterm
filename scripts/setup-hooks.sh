@@ -147,16 +147,19 @@ else:
 "
 }
 
-# --- Kiro CLI: ~/.kiro/agents/chatterm.json ---
+# --- Kiro CLI: both per-agent (~/.kiro/agents/chatterm.json) and global
+#     (~/.kiro/settings.json). Per-agent hooks fire only with `--agent chatterm`;
+#     global hooks fire for every kiro-cli chat regardless of agent. We install
+#     both so default `kiro-cli chat` works out of the box and users who pick
+#     `chatterm` as agent also get coverage. ---
 setup_kiro() {
-  local dir="$HOME/.kiro/agents"
-  local file="$dir/chatterm.json"
-  mkdir -p "$dir"
-  if [ -f "$file" ] && grep -q "$HOOK" "$file"; then
-    echo "✅ Kiro CLI hooks already configured"
-    return
-  fi
-  cat > "$file" << EOF
+  local agent_dir="$HOME/.kiro/agents"
+  local agent_file="$agent_dir/chatterm.json"
+  local settings_file="$HOME/.kiro/settings.json"
+  mkdir -p "$agent_dir"
+
+  if [ ! -f "$agent_file" ] || ! grep -q "$HOOK" "$agent_file"; then
+    cat > "$agent_file" << EOF
 {
   "name": "chatterm",
   "description": "Default agent with ChatTerm notification hooks",
@@ -170,10 +173,44 @@ setup_kiro() {
   }
 }
 EOF
-  echo "✅ Kiro CLI hooks configured (agent: chatterm)"
-  echo "   ⚠️  Kiro loads hooks per-agent. Activate with either:"
-  echo "       kiro-cli chat --agent chatterm   (start a new session)"
-  echo "       /agent swap chatterm             (inside an existing session)"
+    echo "✅ Kiro CLI per-agent hooks configured ($agent_file)"
+  else
+    echo "✅ Kiro CLI per-agent hooks already configured"
+  fi
+
+  # Global hooks: merge into settings.json. Strips stale chatterm entries
+  # (prior-repo paths like /Users/.../my_project/chatterm/scripts/...) and
+  # inserts the canonical HOOK path under the 4 Claude-compatible event names.
+  python3 -c "
+import json, os
+f = '$settings_file'
+s = json.load(open(f)) if os.path.exists(f) else {}
+hook_cmd = {'type': 'command', 'command': '$HOOK'}
+changed = False
+for ev in ['Stop', 'PreToolUse', 'PostToolUse', 'Notification']:
+    rules = s.setdefault('hooks', {}).setdefault(ev, [])
+    # Drop stale chatterm entries (any command containing 'chatterm' that
+    # isn't our canonical HOOK path).
+    def drop_stale(rule):
+        for h in rule.get('hooks', []):
+            c = h.get('command', '')
+            if 'chatterm' in c.lower() and c != '$HOOK':
+                return True
+        return False
+    filtered = [r for r in rules if not drop_stale(r)]
+    if filtered != rules:
+        rules[:] = filtered
+        changed = True
+    # Inject canonical hook if not already present.
+    if not any('$HOOK' in str(r) for r in rules):
+        rules.append({'matcher': '', 'hooks': [hook_cmd]})
+        changed = True
+if changed:
+    json.dump(s, open(f, 'w'), indent=2)
+    print('✅ Kiro CLI global hooks configured ($settings_file)')
+else:
+    print('✅ Kiro CLI global hooks already configured')
+"
 }
 
 # --- Codex: ~/.codex/hooks.json + [features] codex_hooks = true ---
