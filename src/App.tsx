@@ -169,14 +169,20 @@ export default function App() {
           updates.cwd = metaCwd;
         }
 
-        // Backend state (vscreen regex / hook) drives only the `thinking`
-        // flag now — the sidebar typing-dot indicator. `status` is owned by
-        // the output-activity path + idle timer, so flaky regex matches can't
-        // make the avatar pulse wrong.
-        if (state === "thinking" || state === "working") {
+        // Backend state (vscreen regex / hook) drives the semantic flags;
+        // `status` stays owned by the output-activity path + idle timer so
+        // flaky regex matches can't make the avatar pulse wrong. `asking`
+        // (red pulse) and `thinking` (typing-dot) are mutually exclusive —
+        // the agent is either making progress or waiting for the user.
+        if (state === "asking") {
+          updates.asking = true;
+          updates.thinking = false;
+        } else if (state === "thinking" || state === "working") {
           updates.thinking = true;
+          updates.asking = false;
         } else if (state === "idle") {
           updates.thinking = false;
+          updates.asking = false;
         }
 
         // Preview from Rust (already cleaned) — this means a real new message

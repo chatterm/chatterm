@@ -210,7 +210,7 @@ fn start_fifo_listener(app: AppHandle) {
                         let (state, preview) = match msg_type {
                             "reply" => (None, Some(body)),
                             "done" => (Some("idle".to_string()), None),
-                            "ask" => (Some("idle".to_string()), None),
+                            "ask" => (Some("asking".to_string()), None),
                             "tool" => (Some("thinking".to_string()), None),
                             _ => (None, None),
                         };
