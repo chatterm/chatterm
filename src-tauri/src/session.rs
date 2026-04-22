@@ -13,8 +13,18 @@ pub struct SessionMeta {
 }
 
 fn meta_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(format!("{}/.chatterm/sessions.json", home))
+    #[cfg(windows)]
+    {
+        let base = std::env::var("APPDATA").unwrap_or_else(|_| {
+            std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".into())
+        });
+        PathBuf::from(base).join("chatterm").join("sessions.json")
+    }
+    #[cfg(not(windows))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        PathBuf::from(home).join(".chatterm").join("sessions.json")
+    }
 }
 
 pub fn load() -> Vec<SessionMeta> {

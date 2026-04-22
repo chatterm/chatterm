@@ -1,5 +1,7 @@
+#[cfg(target_os = "macos")]
 use plist::Value;
 use serde::Serialize;
+#[cfg(target_os = "macos")]
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +39,7 @@ pub struct ThemeColors {
 }
 
 /// Parse a .terminal plist file and extract theme colors
+#[cfg(target_os = "macos")]
 pub fn parse_terminal_file(path: &str) -> Result<ThemeColors, String> {
     let val = Value::from_file(path).map_err(|e| format!("Failed to read plist: {e}"))?;
     let dict = val
@@ -86,7 +89,13 @@ pub fn parse_terminal_file(path: &str) -> Result<ThemeColors, String> {
     })
 }
 
+#[cfg(not(target_os = "macos"))]
+pub fn parse_terminal_file(_path: &str) -> Result<ThemeColors, String> {
+    Err("Terminal theme import is only available on macOS".to_string())
+}
+
 /// Parse NSKeyedArchiver color data to #rrggbb hex
+#[cfg(target_os = "macos")]
 fn parse_nscolor(data: &[u8]) -> Option<String> {
     let val = plist::Value::from_reader(std::io::Cursor::new(data)).ok()?;
     let dict = val.as_dictionary()?;
@@ -117,6 +126,7 @@ fn parse_nscolor(data: &[u8]) -> Option<String> {
     None
 }
 
+#[cfg(target_os = "macos")]
 fn parse_rgb_components(data: &[u8]) -> Option<String> {
     let s = String::from_utf8_lossy(data)
         .trim_end_matches('\0')

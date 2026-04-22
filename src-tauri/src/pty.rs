@@ -83,17 +83,34 @@ impl PtyManager {
 
         let shell = detect_shell();
         let mut cmd = CommandBuilder::new(&shell);
+        #[cfg(not(windows))]
         cmd.arg("-l");
         if let Some(c) = req.command {
+            #[cfg(not(windows))]
             cmd.args(["-c", c]);
+            #[cfg(windows)]
+            {
+                // PowerShell uses -Command, cmd.exe uses /C
+                if shell.to_lowercase().contains("powershell") || shell.to_lowercase().contains("pwsh") {
+                    cmd.args(["-Command", c]);
+                } else {
+                    cmd.args(["/C", c]);
+                }
+            }
         }
 
         // Set HOME and common env
         let home = home_dir();
+        #[cfg(not(windows))]
         cmd.env("HOME", &home);
+        #[cfg(windows)]
+        cmd.env("USERPROFILE", &home);
         let work_dir = req.cwd.unwrap_or(&home);
         cmd.cwd(work_dir);
+        #[cfg(not(windows))]
         cmd.env("USER", whoami());
+        #[cfg(windows)]
+        cmd.env("USERNAME", whoami());
         if let Ok(path) = std::env::var("PATH") {
             cmd.env("PATH", expand_path(&home, &path));
         }
@@ -183,10 +200,8 @@ impl PtyManager {
 
                         // Record screen state to file (only when recording is enabled)
                         if crate::RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
-                            let rec_dir = format!(
-                                "{}/.chatterm/recordings",
-                                std::env::var("HOME").unwrap_or_default()
-                            );
+                            let rec_dir_path = crate::chatterm_dir().join("recordings");
+                            let rec_dir = rec_dir_path.to_string_lossy().to_string();
                             std::fs::create_dir_all(&rec_dir).ok();
                             let ts = std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
@@ -586,6 +601,7 @@ fn extract_osc99(data: &str) -> Option<PtyNotification> {
 /// session's own process subtree so unrelated instances of the same binary
 /// running elsewhere on the machine are not mis-attributed. Returns an empty
 /// set if `root_pid` is 0 or `ps` fails.
+#[cfg(not(windows))]
 fn descendants_of(root_pid: u32) -> std::collections::HashSet<u32> {
     let mut descendants = std::collections::HashSet::new();
     if root_pid == 0 {
@@ -623,9 +639,15 @@ fn descendants_of(root_pid: u32) -> std::collections::HashSet<u32> {
     descendants
 }
 
+#[cfg(windows)]
+#[allow(dead_code)]
+fn descendants_of(_root_pid: u32) -> std::collections::HashSet<u32> {
+    std::collections::HashSet::new() // TODO: implement via CreateToolhelp32Snapshot
+}
 /// Detect the full command line and cwd of a running agent by scanning the
 /// descendants of `root_pid` (the session's own PTY child). Unrelated
 /// instances of the same binary elsewhere on the system are ignored.
+#[cfg(not(windows))]
 fn detect_agent_command(agent: Option<&str>, root_pid: u32) -> Option<String> {
     let bin = match agent? {
         "claude" => "claude",
@@ -705,6 +727,7 @@ fn detect_agent_command(agent: Option<&str>, root_pid: u32) -> Option<String> {
     None
 }
 
+#[cfg(not(windows))]
 fn detect_agent_cwd(agent: Option<&str>, root_pid: u32) -> Option<String> {
     let bin = match agent? {
         "claude" => "claude",
@@ -748,9 +771,8 @@ fn process_cwd(pid: &str) -> Option<String> {
         .and_then(|p| p.to_str().map(|s| s.to_string()))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn process_cwd(pid: &str) -> Option<String> {
-    // lsof -a -p PID -d cwd: -a means AND all conditions.
     let lsof = std::process::Command::new("lsof")
         .args(["-a", "-p", pid, "-d", "cwd", "-Fn"])
         .output()
@@ -763,6 +785,17 @@ fn process_cwd(pid: &str) -> Option<String> {
     }
     None
 }
+
+#[cfg(windows)]
+fn process_cwd(_pid: &str) -> Option<String> {
+    None // TODO: implement via NtQueryInformationProcess
+}
+
+#[cfg(windows)]
+fn detect_agent_command(_agent: Option<&str>, _root_pid: u32) -> Option<String> { None }
+
+#[cfg(windows)]
+fn detect_agent_cwd(_agent: Option<&str>, _root_pid: u32) -> Option<String> { None }
 
 /// Extract terminal title from OSC 0/2 sequences: \033]0;TITLE\007
 fn extract_osc_title(data: &str) -> Option<String> {
@@ -794,7 +827,10 @@ fn detect_shell() -> String {
     if let Some(shell) = platform_shell() {
         return shell;
     }
-    "/bin/bash".to_string()
+    #[cfg(windows)]
+    { "powershell.exe".to_string() }
+    #[cfg(not(windows))]
+    { "/bin/bash".to_string() }
 }
 
 #[cfg(target_os = "macos")]
@@ -810,58 +846,84 @@ fn platform_shell() -> Option<String> {
         .then(|| shell.to_string())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 fn platform_shell() -> Option<String> {
     None
 }
 
+#[cfg(windows)]
+fn platform_shell() -> Option<String> {
+    // Prefer pwsh (PowerShell 7+) if available, else fall back to powershell.exe
+    if let Ok(o) = std::process::Command::new("where").arg("pwsh.exe").output() {
+        let s = String::from_utf8_lossy(&o.stdout);
+        let p = s.trim();
+        if !p.is_empty() { return Some(p.to_string()); }
+    }
+    None
+}
+
 fn whoami() -> String {
-    std::env::var("USER").unwrap_or_else(|_| {
-        String::from_utf8_lossy(
-            &std::process::Command::new("whoami")
-                .output()
-                .map(|o| o.stdout)
-                .unwrap_or_default(),
-        )
-        .trim()
-        .to_string()
-    })
+    #[cfg(windows)]
+    { std::env::var("USERNAME").unwrap_or_else(|_| "user".into()) }
+    #[cfg(not(windows))]
+    {
+        std::env::var("USER").unwrap_or_else(|_| {
+            String::from_utf8_lossy(
+                &std::process::Command::new("whoami")
+                    .output()
+                    .map(|o| o.stdout)
+                    .unwrap_or_default(),
+            )
+            .trim()
+            .to_string()
+        })
+    }
 }
 
 fn home_dir() -> String {
-    std::env::var("HOME").unwrap_or_else(|_| {
-        #[cfg(target_os = "macos")]
-        {
-            format!("/Users/{}", whoami())
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            format!("/home/{}", whoami())
-        }
-    })
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").unwrap_or_else(|_| {
+            format!("C:\\Users\\{}", whoami())
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME").unwrap_or_else(|_| {
+            #[cfg(target_os = "macos")]
+            { format!("/Users/{}", whoami()) }
+            #[cfg(not(target_os = "macos"))]
+            { format!("/home/{}", whoami()) }
+        })
+    }
 }
 
 fn expand_path(_home: &str, path: &str) -> String {
-    let mut prefixes = Vec::new();
-    #[cfg(target_os = "macos")]
+    #[cfg(windows)]
+    { path.to_string() }
+    #[cfg(not(windows))]
     {
-        prefixes.push("/opt/homebrew/bin".to_string());
-        prefixes.push("/usr/local/bin".to_string());
-    }
-    #[cfg(target_os = "linux")]
-    {
-        prefixes.push(format!("{_home}/.local/bin"));
-        prefixes.push("/usr/local/bin".to_string());
-    }
-
-    let mut merged = Vec::new();
-    for prefix in prefixes {
-        if !path.split(':').any(|entry| entry == prefix) {
-            merged.push(prefix);
+        let mut prefixes = Vec::new();
+        #[cfg(target_os = "macos")]
+        {
+            prefixes.push("/opt/homebrew/bin".to_string());
+            prefixes.push("/usr/local/bin".to_string());
         }
+        #[cfg(target_os = "linux")]
+        {
+            prefixes.push(format!("{_home}/.local/bin"));
+            prefixes.push("/usr/local/bin".to_string());
+        }
+
+        let mut merged = Vec::new();
+        for prefix in prefixes {
+            if !path.split(':').any(|entry| entry == prefix) {
+                merged.push(prefix);
+            }
+        }
+        merged.push(path.to_string());
+        merged.join(":")
     }
-    merged.push(path.to_string());
-    merged.join(":")
 }
 
 // Wrapper to implement portable_pty::Child for std::process::Child
