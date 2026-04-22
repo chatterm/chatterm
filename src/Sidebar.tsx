@@ -36,7 +36,12 @@ export function Avatar({ av, size = 36, status, group }: { av: SessionAvatar; si
       {status && !group && (
         <div title={status} style={{
           position: "absolute", right: -2, bottom: -2, width: 10, height: 10, borderRadius: "50%",
-          background: statusColor(status), border: "2px solid var(--sidebar-bg)",
+          // Running sessions use the avatar's own color (and the pulse ring
+          // inherits it via CSS currentColor). Other states keep the semantic
+          // status palette (red for error, dim for idle, etc.).
+          background: status === "running" ? av.color : statusColor(status),
+          color: av.color,
+          border: "2px solid var(--sidebar-bg)",
         }} className={status === "running" ? "pulse-running" : ""} />
       )}
     </div>
@@ -128,7 +133,7 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             flex: 1, minWidth: 0, fontWeight: 400,
           }}>
-            {s.status === "running" && !s.unread ? (
+            {s.thinking && !s.unread ? (
               <span style={{ color: "var(--status-running)" }}>
                 <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
                 <span style={{ marginLeft: 6, color: "var(--text-dim)" }}>{truncate(s.lastPreview || (s.cwd ? shortCwd(s.cwd) : ""), 28)}</span>

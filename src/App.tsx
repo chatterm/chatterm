@@ -114,11 +114,20 @@ export default function App() {
   sessionsRef.current = sessions;
   activeIdRef.current = activeId;
 
-  // PTY output → track activity only (unread is handled by pty-meta when preview changes)
+  // PTY output → treat any output as activity. `status === "running"` drives
+  // the avatar pulse dot; the 3s idle timer below demotes back to idle. This
+  // keeps the avatar signal rock-solid regardless of whether the vscreen
+  // thinking regex matches.
   useEffect(() => {
     const unlisten = listen<PtyOutput>("pty-output", (event) => {
       const { session_id } = event.payload;
       lastOutputRef.current[session_id] = Date.now();
+      // Only trigger a re-render when the session actually flips idle → running.
+      setSessions(prev => {
+        const target = prev.find(s => s.id === session_id);
+        if (!target || target.status === "running") return prev;
+        return prev.map(s => s.id === session_id ? { ...s, status: "running" } : s);
+      });
     });
     return () => { unlisten.then(f => f()); };
   }, []);
@@ -160,12 +169,14 @@ export default function App() {
           updates.cwd = metaCwd;
         }
 
-        // State from OSC title
-        if (state) {
-          const stateMap: Record<string, Session["status"]> = {
-            idle: "idle", thinking: "running", working: "running",
-          };
-          updates.status = stateMap[state] || s.status;
+        // Backend state (vscreen regex / hook) drives only the `thinking`
+        // flag now — the sidebar typing-dot indicator. `status` is owned by
+        // the output-activity path + idle timer, so flaky regex matches can't
+        // make the avatar pulse wrong.
+        if (state === "thinking" || state === "working") {
+          updates.thinking = true;
+        } else if (state === "idle") {
+          updates.thinking = false;
         }
 
         // Preview from Rust (already cleaned) — this means a real new message
@@ -186,17 +197,19 @@ export default function App() {
     return () => { unlisten.then(f => f()); };
   }, []);
 
-  // Idle detection: if no output for 3s, mark as idle
+  // Idle detection: if no output for 3s, mark as idle and clear thinking.
+  // Thinking is also cleared here as a safety net — if the backend's "idle"
+  // state regex doesn't match, we still stop showing the typing dots once
+  // the PTY goes quiet.
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
       setSessions(prev => prev.map(s => {
-        if (s.status !== "running") return s;
         const lastOut = lastOutputRef.current[s.id] || 0;
-        if (now - lastOut > 3000) {
-          return { ...s, status: "idle" as const };
-        }
-        return s;
+        const stale = now - lastOut > 3000;
+        if (!stale) return s;
+        if (s.status !== "running" && !s.thinking) return s;
+        return { ...s, status: "idle" as const, thinking: false };
       }));
     }, 1000);
     return () => clearInterval(timer);
