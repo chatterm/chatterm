@@ -464,6 +464,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "vte",
+ "windows",
 ]
 
 [[package]]

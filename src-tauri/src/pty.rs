@@ -640,6 +640,7 @@ fn descendants_of(root_pid: u32) -> std::collections::HashSet<u32> {
 }
 
 #[cfg(windows)]
+#[allow(dead_code)]
 fn descendants_of(_root_pid: u32) -> std::collections::HashSet<u32> {
     std::collections::HashSet::new() // TODO: implement via CreateToolhelp32Snapshot
 }

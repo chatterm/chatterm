@@ -35,7 +35,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../scripts/setup-hooks.sh": "setup-hooks.sh"
+      "../scripts/setup-hooks.sh": "setup-hooks.sh",
+      "../scripts/setup-hooks.ps1": "setup-hooks.ps1"
     }
   }
 }
