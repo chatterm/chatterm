@@ -212,14 +212,23 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onSearch,
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {/* Corner radius matches the sidebar avatar tiles (~17% of side)
                 so the header logo reads as the same shape family. Bubble is
-                wrapped in a scale transform so it doesn't fill the blue box
-                to the edges — breathing room around the chat glyph. */}
+                wrapped in a scale transform so it doesn't fill the tile to
+                the edges — breathing room around the chat glyph. The tile
+                and the inner glyph share one `userSpaceOnUse` gradient so
+                the diagonal blue→purple sweep reads as a single surface
+                rather than three independent fills. */}
             <svg viewBox="0 0 1024 1024" width="26" height="26">
-              <rect width="1024" height="1024" rx="170" ry="170" fill="var(--logo-bg)"/>
+              <defs>
+                <linearGradient id="ct-logo-grad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+                  <stop offset="0%" stopColor="#5e8bff"/>
+                  <stop offset="100%" stopColor="#a06cdd"/>
+                </linearGradient>
+              </defs>
+              <rect width="1024" height="1024" rx="170" ry="170" fill="url(#ct-logo-grad)"/>
               <g transform="translate(512 512) scale(0.82) translate(-512 -512)">
                 <path d="M 200 260 L 824 260 Q 864 260 864 300 L 864 680 Q 864 720 824 720 L 560 720 L 420 840 L 450 720 L 200 720 Q 160 720 160 680 L 160 300 Q 160 260 200 260 Z" fill="var(--logo-fg)"/>
-                <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="var(--logo-bg)" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
-                <rect x="540" y="570" width="180" height="40" rx="20" fill="var(--logo-bg)"/>
+                <path d="M 340 400 L 500 500 L 340 600" fill="none" stroke="url(#ct-logo-grad)" strokeWidth="56" strokeLinecap="round" strokeLinejoin="round"/>
+                <rect x="540" y="570" width="180" height="40" rx="20" fill="url(#ct-logo-grad)"/>
               </g>
             </svg>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>ChatTerm</div>

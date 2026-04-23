@@ -1,7 +1,7 @@
 # ChatTerm
 
 <p align="center">
-  <img src="design/logo/v4/1C_bubble_blue_256.png" width="128" alt="ChatTerm">
+  <img src="design/logo/v4/1D_bubble_gradient_256.png" width="128" alt="ChatTerm">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="design/chatterm-preview.png" alt="ChatTerm Screenshot">
+  <img src="design/chatterm-preview.png" alt="ChatTerm Highlights">
 </p>
 
 ## Why ChatTerm?
