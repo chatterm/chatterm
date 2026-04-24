@@ -41,6 +41,19 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
       if (k === "k" || k === "n") return false;
     }
     if (document.querySelector(".cmdk-backdrop")) return false;
+    // Windows IME fix: when an IME composition is active (e.g. typing
+    // pinyin with Sogou/MS input method), pressing Shift to switch to
+    // English should commit the composition buffer. But xterm.js
+    // intercepts the bare Shift keydown and cancels the composition,
+    // losing the typed text. Block Shift/Control/Alt during composition
+    // so the browser's default IME handling commits the text correctly.
+    // Non-modifier keys (Enter, digits, Esc) must pass through so
+    // xterm.js CompositionHelper can finalize the composition normally.
+    if (e.isComposing && !e.ctrlKey && !e.metaKey) {
+      const k = e.keyCode;
+      // 16=Shift, 17=Ctrl, 18=Alt, 20=CapsLock
+      if (k === 16 || k === 17 || k === 18 || k === 20) return false;
+    }
     return true;
   });
 
