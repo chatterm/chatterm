@@ -5,10 +5,14 @@ use std::path::PathBuf;
 pub struct SessionMeta {
     pub id: String,
     pub name: String,
-    pub kind: String,            // "shell" | "agent"
+    pub kind: String,            // "shell" | "agent" | "ssh"
     pub agent: Option<String>,   // "claude" | "kiro" | "codex" | etc
     pub command: Option<String>, // original launch command
     pub cwd: Option<String>,
+    #[serde(default)]
+    pub host: Option<String>,    // remote hostname (SSH sessions)
+    #[serde(default)]
+    pub pre_ssh_name: Option<String>, // original session name before SSH switch
     pub pinned: bool,
 }
 

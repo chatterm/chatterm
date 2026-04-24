@@ -154,6 +154,10 @@ impl PtyManager {
             let mut last_shell_cwd: Option<String> = None;
             let mut last_cwd_probe = std::time::Instant::now()
                 - std::time::Duration::from_secs(10);
+            // When OSC 7 reports a remote hostname, disable the /proc-based
+            // fallback probe — it would read the local `ssh` process's cwd
+            // and overwrite the correct remote path.
+            let mut cwd_via_remote_osc7 = false;
             let mut vscreen = VScreen::new();
 
             // Best-effort initial push of cwd. A single emit can race with the
@@ -252,6 +256,37 @@ impl PtyManager {
                                 state = cfg.detect_state_from_title(&t).map(|s| s.to_string());
                             }
                             title = Some(t);
+                        }
+
+                        // OSC 7 CWD tracking (works across SSH — remote shell
+                        // sends file://hostname/path which tunnels back through PTY)
+                        if let Some((host, path)) = extract_osc7(&data) {
+                            let local = host.is_empty()
+                                || host == "localhost"
+                                || is_local_hostname(&host);
+                            let new_cwd = if local {
+                                path
+                            } else {
+                                // Wrap bare IPv6 addresses in brackets so the
+                                // frontend regex can distinguish host from path
+                                let display_host = if host.contains(':') {
+                                    format!("[{}]", host)
+                                } else {
+                                    host
+                                };
+                                format!("{}:{}", display_host, path)
+                            };
+                            cwd_via_remote_osc7 = !local;
+                            if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                                last_shell_cwd = Some(new_cwd.clone());
+                                last_cwd_probe = std::time::Instant::now();
+                                on_meta(PtyMeta {
+                                    session_id: session_id.clone(),
+                                    title: None, agent: None, state: None,
+                                    preview: None, notification: None, command: None,
+                                    cwd: Some(new_cwd),
+                                });
+                            }
                         }
 
                         // Detect agent from content (always try, allows switching agents)
@@ -443,23 +478,39 @@ impl PtyManager {
                         // Live shell cwd tracking — only for non-agent sessions
                         // (agents have their own cwd discovery via detect_agent_cwd).
                         // Throttled to once per 500ms worth of output bursts.
+                        // When cwd_via_remote_osc7 is set, we still probe /proc
+                        // but only accept the result if it differs from the ssh
+                        // process's own cwd — this detects when the user has
+                        // exited SSH and the foreground process changed.
                         if last_agent_cfg.is_none()
                             && child_pid > 0
                             && last_cwd_probe.elapsed() >= std::time::Duration::from_millis(500)
                         {
                             last_cwd_probe = std::time::Instant::now();
                             if let Some(new_cwd) = process_cwd(&child_pid.to_string()) {
-                                if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                                if cwd_via_remote_osc7 {
+                                    // During SSH, /proc reads the local shell's
+                                    // cwd which stays frozen. We still probe so
+                                    // that when SSH exits and the shell resumes,
+                                    // we detect the cwd is now a local path and
+                                    // re-enable local tracking. The first /proc
+                                    // read after SSH exit resets the flag; the
+                                    // next iteration emits the update.
+                                    cwd_via_remote_osc7 = false;
                                     last_shell_cwd = Some(new_cwd.clone());
                                     on_meta(PtyMeta {
                                         session_id: session_id.clone(),
-                                        title: None,
-                                        agent: None,
-                                        state: None,
-                                        preview: None,
-                                        notification: None,
-                                        command: None,
-                                        cwd: Some(new_cwd),
+                                        title: None, agent: None, state: None,
+                                        preview: None, notification: None,
+                                        command: None, cwd: Some(new_cwd),
+                                    });
+                                } else if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                                    last_shell_cwd = Some(new_cwd.clone());
+                                    on_meta(PtyMeta {
+                                        session_id: session_id.clone(),
+                                        title: None, agent: None, state: None,
+                                        preview: None, notification: None,
+                                        command: None, cwd: Some(new_cwd),
                                     });
                                 }
                             }
@@ -594,6 +645,54 @@ fn extract_osc99(data: &str) -> Option<PtyNotification> {
         }
     }
     None
+}
+
+/// Parse OSC 7 (shell CWD reporting): \033]7;file://HOSTNAME/PATH\007 or \033]7;...;\033\\
+/// Returns (hostname, path). Used to track CWD across SSH sessions where
+/// /proc or lsof cannot reach the remote shell.
+///
+/// NOTE: Only the `file://` scheme is handled. Some terminals emit bare paths
+/// (`\033]7;/home/user\007`) without the scheme — those are intentionally
+/// ignored and fall through to the /proc-based fallback.
+fn extract_osc7(data: &str) -> Option<(String, String)> {
+    let marker = "\x1b]7;file://";
+    // Use rfind so that if multiple OSC 7 sequences arrive in one read
+    // (e.g. rapid `cd` commands), we pick the last (most recent) one.
+    let start = data.rfind(marker)? + marker.len();
+    let rest = &data[start..];
+    let end = rest.find('\x07').or_else(|| rest.find("\x1b\\"))?;
+    let payload = &rest[..end];
+    let slash = payload.find('/')?;
+    let host = percent_decode(&payload[..slash]);
+    let path = percent_decode(&payload[slash..]);
+    // Basic path validation: reject traversal attempts (e.g. /../../../etc)
+    if path.split('/').any(|seg| seg == "..") {
+        return None;
+    }
+    Some((host, path))
+}
+
+/// Decode percent-encoded bytes in a URI path (RFC 3986).
+/// Handles `%20` → space, `%E4%BD%A0` → 你, etc.
+fn percent_decode(s: &str) -> String {
+    let mut out = Vec::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
+                16,
+            ) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Return the set of PIDs that are transitive descendants of `root_pid`
@@ -787,8 +886,162 @@ fn process_cwd(pid: &str) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn process_cwd(_pid: &str) -> Option<String> {
-    None // TODO: implement via NtQueryInformationProcess
+fn process_cwd(pid: &str) -> Option<String> {
+    // Only x64 PEB offsets are defined; reject 32-bit at compile time.
+    #[cfg(not(target_pointer_width = "64"))]
+    compile_error!("Windows process_cwd() only supports 64-bit targets");
+
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
+
+    let pid_u32: u32 = pid.parse().ok()?;
+
+    // RAII wrapper so the handle is closed even if read_process_cwd panics.
+    struct OwnedHandle(windows::Win32::Foundation::HANDLE);
+    impl Drop for OwnedHandle {
+        fn drop(&mut self) {
+            unsafe { let _ = windows::Win32::Foundation::CloseHandle(self.0); }
+        }
+    }
+
+    let handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            false,
+            pid_u32,
+        ).ok()?
+    };
+    let owned = OwnedHandle(handle);
+    unsafe { read_process_cwd(owned.0) }
+}
+
+/// Cached NtQueryInformationProcess function pointer (loaded once from ntdll).
+#[cfg(windows)]
+type NtQueryFn = unsafe extern "system" fn(
+    handle: isize,   // HANDLE
+    class: u32,      // PROCESSINFOCLASS
+    info: *mut u8,   // output buffer
+    len: u32,        // buffer size
+    ret_len: *mut u32,
+) -> i32; // NTSTATUS
+
+#[cfg(windows)]
+fn cached_nt_query() -> Option<NtQueryFn> {
+    use std::sync::OnceLock;
+    static FUNC: OnceLock<Option<NtQueryFn>> = OnceLock::new();
+    *FUNC.get_or_init(|| unsafe {
+        // ntdll.dll is always loaded in every Windows process — use
+        // GetModuleHandleA (no refcount bump) instead of LoadLibraryA.
+        let ntdll = windows::Win32::System::LibraryLoader::GetModuleHandleA(
+            windows::core::PCSTR(b"ntdll.dll\0".as_ptr()),
+        ).ok()?;
+        let func = windows::Win32::System::LibraryLoader::GetProcAddress(
+            ntdll,
+            windows::core::PCSTR(b"NtQueryInformationProcess\0".as_ptr()),
+        )?;
+        Some(std::mem::transmute(func))
+    })
+}
+
+/// Read CWD from a remote process via NtQueryInformationProcess → PEB → ProcessParameters.
+///
+/// x64 layout only — guarded by compile_error! in `process_cwd()`.
+#[cfg(windows)]
+unsafe fn read_process_cwd(handle: windows::Win32::Foundation::HANDLE) -> Option<String> {
+    let nt_query = cached_nt_query()?;
+
+    // PROCESS_BASIC_INFORMATION (x64):
+    //   NTSTATUS ExitStatus       (i32 + 4 bytes padding)
+    //   PPEB     PebBaseAddress   (usize)
+    //   ULONG_PTR AffinityMask    (usize)
+    //   KPRIORITY BasePriority    (i32 + 4 bytes padding)
+    //   ULONG_PTR UniqueProcessId (usize)
+    //   ULONG_PTR InheritedFromUniqueProcessId (usize)
+    #[repr(C)]
+    struct ProcessBasicInformation {
+        exit_status: i32,
+        _pad0: u32,
+        peb_base_address: usize,
+        affinity_mask: usize,
+        base_priority: i32,
+        _pad1: u32,
+        unique_process_id: usize,
+        inherited_from_unique_process_id: usize,
+    }
+    const _: () = assert!(std::mem::size_of::<ProcessBasicInformation>() == 48);
+
+    let mut pbi = std::mem::zeroed::<ProcessBasicInformation>();
+    // .0 accesses the raw isize inside windows::Win32::Foundation::HANDLE
+    let status = nt_query(
+        handle.0 as isize,                                  // process handle
+        0,                                                   // ProcessBasicInformation
+        &mut pbi as *mut _ as *mut u8,                       // output buffer
+        std::mem::size_of::<ProcessBasicInformation>() as u32, // buffer size
+        std::ptr::null_mut(),                                // optional return length
+    );
+    if status < 0 || pbi.peb_base_address == 0 {
+        return None;
+    }
+
+    // PEB.ProcessParameters pointer: offset 0x20 on x64
+    let mut params_ptr: usize = 0;
+    read_mem(handle, pbi.peb_base_address + 0x20, &mut params_ptr)?;
+    if params_ptr == 0 {
+        return None;
+    }
+
+    // RTL_USER_PROCESS_PARAMETERS.CurrentDirectory is a CURDIR at offset 0x38 (x64).
+    // CURDIR starts with a UNICODE_STRING: { Length: u16, MaxLength: u16, pad: u32, Buffer: usize }
+    let mut len: u16 = 0;
+    read_mem(handle, params_ptr + 0x38, &mut len)?;
+    // Windows long-path max is 32767 chars = 65534 bytes
+    if len == 0 || len as usize > 32767 * 2 {
+        return None;
+    }
+
+    // Buffer pointer at +8 bytes from UNICODE_STRING start (after Length + MaxLength + padding)
+    let mut buf_ptr: usize = 0;
+    read_mem(handle, params_ptr + 0x38 + 8, &mut buf_ptr)?;
+    if buf_ptr == 0 {
+        return None;
+    }
+
+    let char_count = len as usize / 2;
+    let mut buf = vec![0u16; char_count];
+    let mut bytes_read = 0usize;
+    let ok = windows::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+        handle,
+        buf_ptr as *const _,
+        buf.as_mut_ptr() as *mut _,
+        char_count * 2,
+        Some(&mut bytes_read),
+    );
+    if ok.is_err() || bytes_read < char_count * 2 {
+        return None;
+    }
+
+    let s = String::from_utf16_lossy(&buf);
+    // Strip trailing backslash (e.g. "C:\Users\foo\" → "C:\Users\foo")
+    Some(s.trim_end_matches('\\').to_string())
+}
+
+#[cfg(windows)]
+unsafe fn read_mem<T: Copy>(
+    handle: windows::Win32::Foundation::HANDLE,
+    addr: usize,
+    out: &mut T,
+) -> Option<()> {
+    let mut read = 0usize;
+    windows::Win32::System::Diagnostics::Debug::ReadProcessMemory(
+        handle,
+        addr as *const _,
+        out as *mut T as *mut _,
+        std::mem::size_of::<T>(),
+        Some(&mut read),
+    )
+    .ok()?;
+    Some(())
 }
 
 #[cfg(windows)]
@@ -860,6 +1113,33 @@ fn platform_shell() -> Option<String> {
         if !p.is_empty() { return Some(p.to_string()); }
     }
     None
+}
+
+/// Check if a hostname matches the local machine, avoiding false SSH detection
+/// when the local shell's OSC 7 uses the machine's actual hostname.
+fn is_local_hostname(host: &str) -> bool {
+    use std::sync::OnceLock;
+    static LOCAL: OnceLock<String> = OnceLock::new();
+    let local = LOCAL.get_or_init(|| {
+        #[cfg(unix)]
+        {
+            let mut buf = [0u8; 256];
+            unsafe {
+                if libc::gethostname(buf.as_mut_ptr() as *mut _, buf.len()) == 0 {
+                    let len = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+                    return String::from_utf8_lossy(&buf[..len]).into_owned();
+                }
+            }
+        }
+        #[cfg(windows)]
+        {
+            if let Ok(h) = std::env::var("COMPUTERNAME") {
+                return h;
+            }
+        }
+        String::new()
+    });
+    !local.is_empty() && host == local.as_str()
 }
 
 fn whoami() -> String {
