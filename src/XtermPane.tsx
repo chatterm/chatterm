@@ -8,7 +8,7 @@ import { PtyOutput, isMenuMod } from "./types";
 import { getCurrentTheme, toXtermTheme, subscribeTheme } from "./themes";
 
 // Global cache: one Terminal instance per session, survives re-renders
-const termCache = new Map<string, { term: Terminal; fit: FitAddon; unlisten: UnlistenFn | null; unsubTheme: () => void }>();
+const termCache = new Map<string, { term: Terminal; fit: FitAddon; unlisten: UnlistenFn | null; unsubTheme: () => void; lastOnData: { text: string; sent: boolean } }>();
 
 function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
   let entry = termCache.get(sessionId);
@@ -55,6 +55,8 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
 
   // Keyboard → PTY
   term.onData((data) => {
+    const e = termCache.get(sessionId);
+    if (e) e.lastOnData = { text: data, sent: true };
     invoke("write_session", { id: sessionId, data });
   });
 
@@ -77,7 +79,7 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
     term.options.theme = toXtermTheme(t);
   });
 
-  const newEntry = { term, fit, unlisten, unsubTheme };
+  const newEntry = { term, fit, unlisten, unsubTheme, lastOnData: { text: "", sent: false } };
   termCache.set(sessionId, newEntry);
   return newEntry;
 }
@@ -121,16 +123,27 @@ export default function XtermPane({ sessionId }: Props) {
         ta.addEventListener("input", ((e: InputEvent) => {
           if (e.defaultPrevented) return;
           if (e.inputType !== "insertText" || e.isComposing || !e.data) return;
-          // Sogou inserts multiple characters at once (e.g. "hello") via a
-          // single input event. Normal keystrokes produce single-char input
-          // events that xterm.js already handles via keydown. Only intercept
-          // multi-char inserts to avoid double-sending normal typing.
-          if (e.data.length <= 1) return;
+          // Skip single ASCII chars — xterm.js handles those via keydown.
+          // Allow single CJK chars through (Sogou single-char commit).
+          if (e.data.length === 1 && e.data.charCodeAt(0) < 0x80) return;
+          // xterm.js registers its input listener first (same element,
+          // same capture phase), so onData fires before this handler.
+          // If onData already sent this exact text, skip to avoid duplication.
+          const entry = termCache.get(sessionId);
+          if (entry) {
+            const last = entry.lastOnData;
+            if (last.sent && last.text === e.data) { last.sent = false; return; }
+          }
           invoke("write_session", { id: sessionId, data: e.data });
           ta.value = "";
         }) as EventListener, true);
 
-        // Pattern 2: compositionend with empty textarea
+        // Pattern 2: compositionend with empty textarea.
+        // Some IMEs clear textarea.value before compositionend fires;
+        // xterm.js reads empty string via setTimeout(0) → text lost.
+        // The ta.value check is the correct guard: if textarea still has
+        // text, xterm.js will handle it; if empty, xterm.js will also
+        // fail, so we send as fallback.
         ta.addEventListener("compositionend", (e: CompositionEvent) => {
           const text = e.data;
           if (!text) return;
