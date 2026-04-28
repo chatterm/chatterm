@@ -18,6 +18,9 @@ struct ScreenInner {
     cursor_col: usize,
     rows: usize,
     cols: usize,
+    /// True when the terminal has switched to the alternate screen buffer
+    /// (CSI ?1049h or CSI ?47h). TUI apps like nvim, vim, htop use this.
+    alt_screen: bool,
 }
 
 impl ScreenInner {
@@ -28,6 +31,7 @@ impl ScreenInner {
             cursor_col: 0,
             rows: ROWS,
             cols: COLS,
+            alt_screen: false,
         }
     }
 
@@ -173,6 +177,27 @@ impl Perform for ScreenInner {
             } // cursor vertical absolute
             _ => {} // ignore SGR (m), mode sets (h/l), etc.
         }
+
+        // DEC private mode set/reset: CSI ? Ps h / CSI ? Ps l
+        // Track alternate screen buffer (used by nvim, vim, htop, less, etc.)
+        if (action == 'h' || action == 'l') && _intermediates == [b'?'] {
+            for &param in &p {
+                if param == 1049 || param == 1047 || param == 47 {
+                    self.alt_screen = action == 'h';
+                    // On exit (l): clear grid so TUI residue doesn't pollute
+                    // shell preview extraction. A real terminal restores the
+                    // saved main buffer; we just clear since we don't need
+                    // scrollback fidelity — the shell prompt redraws immediately.
+                    if action == 'l' {
+                        for r in 0..self.rows {
+                            self.clear_line(r);
+                        }
+                        self.cursor_row = 0;
+                        self.cursor_col = 0;
+                    }
+                }
+            }
+        }
     }
 
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
@@ -209,6 +234,11 @@ impl VScreen {
     /// Get a specific row
     pub fn row(&self, n: usize) -> String {
         self.inner.row_text(n)
+    }
+
+    /// Returns true when the alternate screen buffer is active (TUI app running)
+    pub fn is_alt_screen(&self) -> bool {
+        self.inner.alt_screen
     }
 
     /// Extract the "last meaningful message" from the screen.
@@ -559,5 +589,45 @@ mod tests {
         vs.feed(b"\xe2\x9d\xaf \r\n"); // ❯
         let msg = vs.extract_last_message(Some("claude"));
         assert_eq!(msg, Some("你好！".to_string()));
+    }
+
+    #[test]
+    fn test_alt_screen_tracking() {
+        let mut vs = VScreen::new();
+        assert!(!vs.is_alt_screen());
+
+        // CSI ?1049h — enter alternate screen (nvim, vim, etc.)
+        vs.feed(b"\x1b[?1049h");
+        assert!(vs.is_alt_screen());
+
+        // CSI ?1049l — leave alternate screen
+        vs.feed(b"\x1b[?1049l");
+        assert!(!vs.is_alt_screen());
+
+        // CSI ?47h — legacy alternate screen sequence
+        vs.feed(b"\x1b[?47h");
+        assert!(vs.is_alt_screen());
+
+        vs.feed(b"\x1b[?47l");
+        assert!(!vs.is_alt_screen());
+
+        // CSI ?1047h — xterm/ncurses variant
+        vs.feed(b"\x1b[?1047h");
+        assert!(vs.is_alt_screen());
+
+        vs.feed(b"\x1b[?1047l");
+        assert!(!vs.is_alt_screen());
+    }
+
+    #[test]
+    fn test_alt_screen_exit_clears_grid() {
+        let mut vs = VScreen::new();
+        vs.feed(b"\x1b[?1049h");
+        vs.feed(b"nvim residue line");
+        assert_eq!(vs.row(0), "nvim residue line");
+
+        // Exiting alt screen should clear the grid
+        vs.feed(b"\x1b[?1049l");
+        assert!(vs.rows().is_empty());
     }
 }

@@ -374,6 +374,12 @@ impl PtyManager {
                                 if !data.contains('\n') && !data.contains('\r') {
                                     return None;
                                 }
+                                // Suppress when a TUI app (nvim, vim, htop…) is using
+                                // the alternate screen — its status bar content would be
+                                // misinterpreted as a shell prompt.
+                                if vscreen.is_alt_screen() {
+                                    return None;
+                                }
                                 let mut last_dir = None;
                                 for row in rows.iter().rev() {
                                     let t = row.trim();
