@@ -21,3 +21,7 @@ capture/artifacts/
 
 # Logs
 *.log
+
+# Python
+__pycache__/
+*.pyc

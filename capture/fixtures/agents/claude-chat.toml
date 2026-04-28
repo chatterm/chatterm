@@ -1,0 +1,83 @@
+# Multi-turn Claude conversation with NO tool calls — pure reply text.
+# Exists to exercise the reply-extraction pipeline on back-to-back
+# thinking→idle cycles without dialog interruptions.
+
+agent = "claude"
+case = "chat"
+command = ["claude"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 20000
+timeout_ms = 600000
+
+[[step]]
+kind = "wait_regex"
+pattern = "\\xe2\\x9c\\xb3 Claude Code"
+timeout_ms = 20000
+
+[[step]]
+kind = "wait_idle"
+ms = 1500
+
+# 1. short factual
+[[step]]
+kind = "send"
+data = "what does the term 'cache coherence' mean in one sentence?\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+# 2. rewrite/style
+[[step]]
+kind = "send"
+data = "rewrite that previous sentence at a 10-year-old's reading level.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+# 3. comparison
+[[step]]
+kind = "send"
+data = "compare async/await with threads in two bullets.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+# 4. follow-up that references prior turns
+[[step]]
+kind = "send"
+data = "which of those two is more appropriate for an IO-heavy web server and why?\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+# 5. listing
+[[step]]
+kind = "send"
+data = "list 5 real-world examples of critical sections in shared-memory code. numbered list, one line each.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+# 6. summary of the whole thread
+[[step]]
+kind = "send"
+data = "summarize this whole conversation in 3 bullets.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "/exit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 3000
