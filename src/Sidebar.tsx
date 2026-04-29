@@ -1,7 +1,8 @@
 import React from "react";
-import { Session, SessionAvatar, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
+import { Session, SessionAvatar, SessionKind, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
 import { Ic } from "./Icons";
 import { getCurrentTheme, subscribeTheme } from "./themes";
+import { getPersona, subscribePersona } from "./persona";
 
 // Full path + "$" when it fits the sidebar width; fall back to the last
 // path segment + "$" when too long. Examples:
@@ -16,7 +17,29 @@ function shortCwd(cwd: string): string {
   return `${seg}$`;
 }
 
-export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAvatar; size?: number; status?: SessionStatus; asking?: boolean; group?: boolean }) {
+interface AvatarProps {
+  av: SessionAvatar;
+  size?: number;
+  status?: SessionStatus;
+  asking?: boolean;
+  group?: boolean;
+  // Optional richer signals — only consulted in pet mode.
+  kind?: SessionKind;
+  thinking?: boolean;
+  unread?: number;
+  muted?: boolean;
+}
+
+export function Avatar(props: AvatarProps) {
+  // Subscribe to persona at the leaf so callsites don't have to thread the
+  // flag down. Re-renders only this Avatar instance when persona flips.
+  const [persona, setPersona] = React.useState(getPersona);
+  React.useEffect(() => subscribePersona(setPersona), []);
+  if (persona === "pet") return <PetAvatar {...props} />;
+  return <OperatorAvatar {...props} />;
+}
+
+function OperatorAvatar({ av, size = 36, status, asking, group }: AvatarProps) {
   const font = Math.round(size * 0.4);
   return (
     <div style={{ position: "relative", width: size, height: size, flex: `0 0 ${size}px` }}>
@@ -54,6 +77,215 @@ export function Avatar({ av, size = 36, status, asking, group }: { av: SessionAv
   );
 }
 
+// ─── Pet avatar ──────────────────────────────────────────────────────────
+// Replaces the monogram tile with a kawaii creature whose species is keyed
+// off `kind` (cat for agents, fox for ssh, …) and face is keyed off status.
+// All runtime state still flows through the same Session shape — this is a
+// pure visual swap, not a separate state model.
+
+type PetSpeciesKey = "cat" | "fox" | "ham" | "pen" | "bun" | "owl";
+type PetEyes = "focused" | "curious" | "x" | "happy" | "closed" | "dot";
+type PetMouth = "smile" | "smirk" | "frown" | "o" | "neutral" | "gag";
+type PetFaceState = SessionStatus | "asking";
+
+// Pet mode treats species as decoration, not a kind indicator. Hashing the
+// session's stable monogram into one of six species gives every session a
+// pet but makes the bestiary feel varied — kinds are already conveyed by the
+// KindIcon next to the title.
+const PET_SPECIES: PetSpeciesKey[] = ["cat", "fox", "ham", "pen", "bun", "owl"];
+
+function petSpeciesFor(seed: string): PetSpeciesKey {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return PET_SPECIES[Math.abs(h) % PET_SPECIES.length];
+}
+
+function petFaceFor(state: PetFaceState, muted: boolean): { eyes: PetEyes; mouth: PetMouth } {
+  const mouth: PetMouth = muted ? "gag" : ({
+    asking: "o", running: "smirk", error: "frown", done: "smile", idle: "neutral",
+  } as Record<PetFaceState, PetMouth>)[state] || "neutral";
+  const eyes: PetEyes = ({
+    asking: "curious", running: "focused", error: "x", done: "happy", idle: "closed",
+  } as Record<PetFaceState, PetEyes>)[state] || "dot";
+  return { eyes, mouth };
+}
+
+function PetAvatar({ av, size = 36, status, asking, group, thinking, unread = 0, muted = false }: AvatarProps) {
+  const species = petSpeciesFor(av.mono + av.color);
+  const effective: PetFaceState = asking ? "asking" : (status || "idle");
+  const face = petFaceFor(effective, muted);
+
+  // Body wobble keyed off the dominant signal. Asking wins so a blocked
+  // session always animates differently from a busy one.
+  const wob =
+    asking ? "pet-wave" :
+    status === "running" ? "pet-wobble" :
+    status === "error"   ? "pet-shake" :
+    "";
+
+  // Top-right emote bubble — only one shows; asking wins, then status, then
+  // unread, then thinking-while-running.
+  const emote = (() => {
+    if (muted) return null;
+    if (asking)             return { ch: "!", bg: "var(--status-asking)", color: "white", pulse: true };
+    if (status === "error") return { ch: "!", bg: "var(--status-error)",  color: "white" };
+    if (status === "done")  return { ch: "✓", bg: "var(--status-done)",   color: "var(--sidebar-bg)" };
+    if (unread > 0)         return { ch: unread > 9 ? "9+" : String(unread), bg: "var(--unread)", color: "white" };
+    if (status === "running" && thinking) return { ch: "…", bg: "var(--sidebar-bg)", color: "var(--text-strong)", border: true };
+    if (status === "idle")  return { ch: "z", bg: "transparent", color: "var(--text-mute)", noborder: true, zzz: true };
+    return null;
+  })();
+
+  return (
+    <div style={{
+      position: "relative", width: size, height: size, flex: `0 0 ${size}px`,
+      filter: muted ? "saturate(0.25) brightness(0.85)" : "none",
+    }}>
+      <div className={wob} style={{
+        width: size, height: size, borderRadius: "32%", background: av.color,
+        boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.18)",
+        position: "relative", overflow: "visible",
+      }}>
+        <PetSpecies species={species} size={size} face={face} state={effective} />
+      </div>
+
+      {group && (
+        <div style={{
+          position: "absolute", right: -4, bottom: -4, width: 14, height: 14, borderRadius: "50%",
+          background: "var(--av-4)", border: "2px solid var(--sidebar-bg)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 8, color: "var(--avatar-text)", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace",
+        }}>3</div>
+      )}
+
+      {emote && (
+        <div className={`pet-bubble ${emote.pulse ? "pulse-asking" : ""} ${emote.zzz ? "pet-zzz" : ""}`}
+          style={{
+            position: "absolute", right: -6, top: -6,
+            minWidth: 14, height: 14, padding: "0 3px", borderRadius: 7,
+            background: emote.bg, color: emote.color,
+            fontSize: 9, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            border: emote.noborder ? "none" : "2px solid var(--sidebar-bg)",
+            lineHeight: 1,
+          }}>{emote.ch}</div>
+      )}
+    </div>
+  );
+}
+
+function PetSpecies({ species, size, face, state }: { species: PetSpeciesKey; size: number; face: { eyes: PetEyes; mouth: PetMouth }; state: PetFaceState }) {
+  // Species-specific ear/beak shapes layered on top of the round body.
+  // Geometry is sized to a 36-unit canvas; SVG handles the scale.
+  const ears = (() => {
+    switch (species) {
+      case "cat":
+        return (<>
+          <path d="M 6 8 L 9 2 L 13 7 Z" fill="rgba(0,0,0,0.25)"/>
+          <path d="M 30 8 L 27 2 L 23 7 Z" fill="rgba(0,0,0,0.25)"/>
+        </>);
+      case "fox":
+        return (<>
+          <path d="M 5 9 L 7 1 L 13 8 Z" fill="rgba(255,255,255,0.7)" stroke="rgba(0,0,0,0.3)" strokeWidth="0.4"/>
+          <path d="M 31 9 L 29 1 L 23 8 Z" fill="rgba(255,255,255,0.7)" stroke="rgba(0,0,0,0.3)" strokeWidth="0.4"/>
+        </>);
+      case "ham":
+        return (<>
+          <circle cx="8" cy="6" r="3" fill="rgba(0,0,0,0.18)"/>
+          <circle cx="28" cy="6" r="3" fill="rgba(0,0,0,0.18)"/>
+        </>);
+      case "pen": return null;
+      case "bun":
+        return (<>
+          <ellipse cx="12" cy="3" rx="2" ry="5" fill="rgba(255,255,255,0.55)" stroke="rgba(0,0,0,0.2)" strokeWidth="0.4"/>
+          <ellipse cx="24" cy="3" rx="2" ry="5" fill="rgba(255,255,255,0.55)" stroke="rgba(0,0,0,0.2)" strokeWidth="0.4"/>
+        </>);
+      case "owl":
+        return (<>
+          <path d="M 5 7 L 9 2 L 13 7 Z" fill="rgba(0,0,0,0.22)"/>
+          <path d="M 31 7 L 27 2 L 23 7 Z" fill="rgba(0,0,0,0.22)"/>
+        </>);
+    }
+  })();
+  const beak = species === "pen" && (<path d="M 17 22 L 19 22 L 18 24 Z" fill="#f2b33d"/>);
+  return (
+    <svg viewBox="0 0 36 36" width={size} height={size}
+      style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+      {ears}
+      <PetEyesEl face={face.eyes} state={state}/>
+      <PetMouthEl face={face.mouth}/>
+      {beak}
+      {(face.mouth === "smile" || face.mouth === "smirk") && (
+        <>
+          <ellipse cx="11" cy="22" rx="1.6" ry="1" fill="rgba(255,120,120,0.35)"/>
+          <ellipse cx="25" cy="22" rx="1.6" ry="1" fill="rgba(255,120,120,0.35)"/>
+        </>
+      )}
+    </svg>
+  );
+}
+
+function PetEyesEl({ face, state }: { face: PetEyes; state: PetFaceState }) {
+  // Blink only when not actively running — staring eyes during a busy stream
+  // read as "focused", blinking at rest reads as "alive".
+  const blink = state === "running" ? "" : "pet-blink";
+  switch (face) {
+    case "focused":
+      return (<g className={blink}>
+        <circle cx="13" cy="18" r="1.8" fill="#1a1a1a"/>
+        <circle cx="23" cy="18" r="1.8" fill="#1a1a1a"/>
+        <circle cx="13.6" cy="17.4" r="0.5" fill="white"/>
+        <circle cx="23.6" cy="17.4" r="0.5" fill="white"/>
+      </g>);
+    case "curious":
+      return (<g>
+        <circle cx="13" cy="18" r="2.6" fill="white" stroke="#1a1a1a" strokeWidth="0.6"/>
+        <circle cx="23" cy="18" r="2.6" fill="white" stroke="#1a1a1a" strokeWidth="0.6"/>
+        <circle cx="13" cy="18.5" r="1.2" fill="#1a1a1a"/>
+        <circle cx="23" cy="18.5" r="1.2" fill="#1a1a1a"/>
+      </g>);
+    case "x":
+      return (<g stroke="#1a1a1a" strokeWidth="1.4" strokeLinecap="round">
+        <line x1="11" y1="16.5" x2="14.5" y2="20"/>
+        <line x1="14.5" y1="16.5" x2="11" y2="20"/>
+        <line x1="21.5" y1="16.5" x2="25" y2="20"/>
+        <line x1="25" y1="16.5" x2="21.5" y2="20"/>
+      </g>);
+    case "happy":
+      return (<g stroke="#1a1a1a" strokeWidth="1.4" strokeLinecap="round" fill="none">
+        <path d="M 11 19 Q 13 16.5 15 19"/>
+        <path d="M 21 19 Q 23 16.5 25 19"/>
+      </g>);
+    case "closed":
+      return (<g className={blink} stroke="#1a1a1a" strokeWidth="1.4" strokeLinecap="round">
+        <line x1="11" y1="18.5" x2="15" y2="18.5"/>
+        <line x1="21" y1="18.5" x2="25" y2="18.5"/>
+      </g>);
+    default:
+      return (<g className={blink}>
+        <circle cx="13" cy="18" r="1.4" fill="#1a1a1a"/>
+        <circle cx="23" cy="18" r="1.4" fill="#1a1a1a"/>
+      </g>);
+  }
+}
+
+function PetMouthEl({ face }: { face: PetMouth }) {
+  switch (face) {
+    case "smile":   return <path d="M 15 24 Q 18 27 21 24"     stroke="#1a1a1a" strokeWidth="1.2" fill="none" strokeLinecap="round"/>;
+    case "smirk":   return <path d="M 16 24.5 Q 18 25.8 20 24.5" stroke="#1a1a1a" strokeWidth="1.1" fill="none" strokeLinecap="round"/>;
+    case "frown":   return <path d="M 15 25.5 Q 18 23 21 25.5"  stroke="#1a1a1a" strokeWidth="1.2" fill="none" strokeLinecap="round"/>;
+    case "o":       return <ellipse cx="18" cy="25" rx="1.2" ry="1.6" fill="#1a1a1a"/>;
+    case "neutral": return <line x1="16.5" y1="25" x2="19.5" y2="25" stroke="#1a1a1a" strokeWidth="1.1" strokeLinecap="round"/>;
+    case "gag":
+      return (<g stroke="#1a1a1a" strokeWidth="1.1" strokeLinecap="round">
+        <line x1="14.5" y1="25" x2="21.5" y2="25"/>
+        <line x1="14.5" y1="25" x2="14.5" y2="23.6"/>
+        <line x1="21.5" y1="25" x2="21.5" y2="23.6"/>
+        <line x1="16.6" y1="24" x2="19.4" y2="26" stroke="#888" strokeWidth="0.7"/>
+      </g>);
+  }
+}
+
 function UnreadBadge({ n, muted }: { n: number; muted?: boolean }) {
   if (!n) return null;
   if (muted) return <div style={{ minWidth: 8, height: 8, borderRadius: "50%", background: "var(--text-mute)" }} />;
@@ -83,7 +315,8 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <Avatar av={s.avatar} status={s.status} asking={s.asking} group={s.avatar.group} />
+      <Avatar av={s.avatar} status={s.status} asking={s.asking} group={s.avatar.group}
+        kind={s.kind} thinking={s.thinking} unread={s.unread} muted={s.muted} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
           <div style={{

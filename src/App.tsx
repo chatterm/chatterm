@@ -8,6 +8,7 @@ import CmdK from "./CmdK";
 import { Ic } from "./Icons";
 import { Session, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
+import { getPersona, setPersona, subscribePersona, Persona } from "./persona";
 import "./App.css";
 
 interface PtyMeta { session_id: string; title: string | null; agent: string | null; state: string | null; preview: string | null; command: string | null; cwd: string | null; }
@@ -406,6 +407,8 @@ export default function App() {
 
 function ThemePanel({ systemThemes, onClose }: { systemThemes: string[]; onClose: () => void }) {
   const [current, setCurrent] = useState(getCurrentTheme().name);
+  const [persona, setPersonaState] = useState<Persona>(getPersona);
+  useEffect(() => subscribePersona(setPersonaState), []);
   const themes = getAllThemes();
 
   const pick = (t: TerminalTheme) => {
@@ -424,7 +427,30 @@ function ThemePanel({ systemThemes, onClose }: { systemThemes: string[]; onClose
   return (
     <div className="cmdk-backdrop" onClick={onClose}>
       <div className="cmdk-panel" style={{ padding: 16, maxHeight: "70vh", overflow: "auto" }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-strong)", marginBottom: 12 }}>Theme</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-strong)", marginBottom: 12 }}>Appearance</div>
+
+        {/* Persona */}
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>AVATAR STYLE</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
+          {([
+            { v: "operator", label: "Operator", sub: "monogram tile" },
+            { v: "pet",      label: "Pet 🐾",  sub: "kawaii creatures" },
+          ] as { v: Persona; label: string; sub: string }[]).map(o => {
+            const active = persona === o.v;
+            return (
+              <button key={o.v} onClick={() => setPersona(o.v)} style={{
+                display: "flex", flexDirection: "column", alignItems: "stretch", gap: 4,
+                padding: 8, borderRadius: 5, cursor: "pointer", textAlign: "left",
+                background: active ? "var(--sidebar-active)" : "transparent",
+                border: active ? "1px solid var(--accent)" : "1px solid var(--border-strong)",
+                color: active ? "var(--text-strong)" : "var(--text-dim)",
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{o.label}</div>
+                <div style={{ fontSize: 10, color: "var(--text-mute)" }}>{o.sub}</div>
+              </button>
+            );
+          })}
+        </div>
 
         {/* Built-in + imported */}
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>THEMES</div>
