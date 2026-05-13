@@ -1,5 +1,6 @@
 export type SessionKind = "shell" | "agent" | "process" | "ssh" | "group" | "ci" | "hook";
 export type SessionStatus = "running" | "done" | "error" | "idle";
+export type SplitDir = "row" | "column";
 
 export interface SessionAvatar { mono: string; color: string; group?: boolean; }
 
@@ -53,6 +54,10 @@ export interface Session {
   user?: string;
   port?: number;
   pid?: number;
+  // Backend id of the side-by-side shell PTY. Set when the user opens split
+  // mode; the sidecar inherits the main session's cwd at spawn time, then
+  // runs independently. Cleared on close. Runtime only — not persisted.
+  sidecarId?: string;
   // Internal fields — not persisted directly, but used at runtime
   _agent?: string | null;
   _command?: string | null;

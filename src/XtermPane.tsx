@@ -59,10 +59,21 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
   });
 
   // PTY → xterm (listen once, stays alive)
+  // Coalesce writes per animation frame to avoid stutter in release builds
+  // where the optimized PTY reader emits many small chunks.
   let unlisten: UnlistenFn | null = null;
+  let pendingData = "";
+  let rafId = 0;
   listen<PtyOutput>("pty-output", (event) => {
     if (event.payload.session_id === sessionId) {
-      term.write(event.payload.data);
+      pendingData += event.payload.data;
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          term.write(pendingData);
+          pendingData = "";
+          rafId = 0;
+        });
+      }
     }
   }).then(fn => {
     unlisten = fn;
@@ -153,14 +164,23 @@ export default function XtermPane({ sessionId }: Props) {
       invoke("resize_session", { id: sessionId, cols: term.cols, rows: term.rows });
     });
 
+    // Debounce fit/resize. A single layout change (split toggle, orientation
+    // flip, window resize) fires ResizeObserver many times in one frame —
+    // running `fit.fit()` and an IPC roundtrip on every callback noticeably
+    // stutters when two xterms are mounted. Coalesce to one trailing call.
+    let resizeTimer: number | undefined;
     const ro = new ResizeObserver(() => {
-      fit.fit();
-      invoke("resize_session", { id: sessionId, cols: term.cols, rows: term.rows });
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        fit.fit();
+        invoke("resize_session", { id: sessionId, cols: term.cols, rows: term.rows });
+      }, 60);
     });
     ro.observe(container);
 
     return () => {
       ro.disconnect();
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
       // Don't dispose — keep terminal alive for when user switches back
     };
   }, [sessionId]);

@@ -2,6 +2,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufReader, Write};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -186,6 +187,10 @@ impl PtyManager {
             let mut last_osc7_time: Option<std::time::Instant> = None;
             let mut vscreen = VScreen::new();
 
+            // Async CWD probe channel — avoids blocking the reader thread
+            let (cwd_tx, cwd_rx) = mpsc::channel::<Option<String>>();
+            let mut cwd_probe_inflight = false;
+
             // Best-effort initial push of cwd. A single emit can race with the
             // frontend's `listen("pty-meta")` registration on cold start, so
             // the frontend also pulls via the `session_cwd` command after it
@@ -209,6 +214,21 @@ impl PtyManager {
                 }
             }
             loop {
+                // Collect async CWD probe result (non-blocking)
+                if let Ok(result) = cwd_rx.try_recv() {
+                    cwd_probe_inflight = false;
+                    if let Some(new_cwd) = result {
+                        if Some(&new_cwd) != last_shell_cwd.as_ref() {
+                            last_shell_cwd = Some(new_cwd.clone());
+                            on_meta(PtyMeta {
+                                session_id: session_id.clone(),
+                                title: None, agent: None, state: None,
+                                preview: None, notification: None,
+                                command: None, cwd: Some(new_cwd),
+                            });
+                        }
+                    }
+                }
                 match std::io::Read::read(&mut buf_reader, &mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
@@ -530,24 +550,23 @@ impl PtyManager {
                         // prompt (e.g. our injected PowerShell prompt). On Windows
                         // process_cwd() reads a stale PEB that would overwrite
                         // the correct OSC 7 path.
+                        // CWD probe: spawn on a separate thread to avoid blocking
+                        // the reader. Results arrive via cwd_rx on the next iteration.
                         if last_agent_cfg.is_none()
                             && child_pid > 0
                             && !cwd_via_remote_osc7
                             && last_osc7_time.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(10))
                             && last_cwd_probe.elapsed() >= std::time::Duration::from_millis(500)
+                            && !cwd_probe_inflight
                         {
                             last_cwd_probe = std::time::Instant::now();
-                            if let Some(new_cwd) = process_cwd(&child_pid.to_string()) {
-                                if Some(&new_cwd) != last_shell_cwd.as_ref() {
-                                    last_shell_cwd = Some(new_cwd.clone());
-                                    on_meta(PtyMeta {
-                                        session_id: session_id.clone(),
-                                        title: None, agent: None, state: None,
-                                        preview: None, notification: None,
-                                        command: None, cwd: Some(new_cwd),
-                                    });
-                                }
-                            }
+                            cwd_probe_inflight = true;
+                            let pid_str = child_pid.to_string();
+                            let tx = cwd_tx.clone();
+                            std::thread::spawn(move || {
+                                let result = process_cwd(&pid_str);
+                                let _ = tx.send(result);
+                            });
                         }
 
                         on_output(PtyOutput {
