@@ -36,6 +36,7 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 - **实时状态检测** — 通过 vscreen 模式匹配检测 thinking/idle 状态
 - **Hook 驱动预览** — 通过 Named Pipe (FIFO) IPC 获取 Agent 回复预览，无需屏幕刮取
 - **主题系统** — 内置 ChatTerm / VS Code Dark / Dark+，macOS 可导入 Terminal 主题
+- **萌宠头像 🐾** — 一键把头像方块换成会眨眼、会摇摆、会喊「!」的小动物，表情和气泡跟随会话状态（thinking / asking / error / done / idle / 未读）
 - **会话持久化** — 重启后恢复会话列表，Agent 会话支持 `--resume` 恢复
 - **⌘K 搜索** — 按名称、工作目录或输出快速搜索会话
 - **Shell 预览** — 显示 Shell 会话的最后命令和工作目录
