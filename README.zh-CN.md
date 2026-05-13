@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="design/chatterm-preview.zh-CN.png" alt="ChatTerm 亮点功能">
+  <img src="design/chatterm-running.gif" alt="ChatTerm 运行演示">
 </p>
 
 ## 为什么需要 ChatTerm？
@@ -39,6 +39,10 @@ ChatTerm 在真实终端之上提供 **IM 风格的会话管理层**。
 - **会话持久化** — 重启后恢复会话列表，Agent 会话支持 `--resume` 恢复
 - **⌘K 搜索** — 按名称、工作目录或输出快速搜索会话
 - **Shell 预览** — 显示 Shell 会话的最后命令和工作目录
+
+<p align="center">
+  <img src="design/chatterm-preview.zh-CN.png" alt="ChatTerm 亮点功能">
+</p>
 
 ## 技术栈
 
