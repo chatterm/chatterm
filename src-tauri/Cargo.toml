@@ -1,6 +1,6 @@
 [package]
 name = "chatterm"
-version = "0.3.0"
+version = "0.3.1"
 description = "IM-style Terminal Workspace"
 authors = ["you"]
 edition = "2021"
