@@ -1,0 +1,31 @@
+# Kiro long-form reply — a single prompt that forces an output larger than
+# the visible screen (40 rows) so we exercise scrollback stitching.
+
+agent = "kiro"
+case = "long-reply"
+command = ["kiro-cli", "chat"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 15000
+timeout_ms = 420000
+
+[[step]]
+kind = "wait_idle"
+ms = 4000
+
+[[step]]
+kind = "send"
+data = "write a 500-word technical comparison of SQL vs NoSQL databases. Cover: data model, scalability, consistency, query ergonomics, operational burden. Format as a prose essay with section headers.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 120000
+
+[[step]]
+kind = "send"
+data = "/quit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

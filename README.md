@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="design/chatterm-preview.png" alt="ChatTerm Highlights">
+  <img src="design/chatterm-running.gif" alt="ChatTerm in action">
 </p>
 
 ## Why ChatTerm?
@@ -36,9 +36,14 @@ ChatTerm solves this with an **IM-style session layer** on top of a real termina
 - **Real-time status** — Thinking/idle detection via vscreen pattern matching
 - **Hook-driven previews** — Agent reply previews via Named Pipe (FIFO) IPC, no screen scraping
 - **Theme system** — Built-in ChatTerm / VS Code Dark / Dark+ themes; macOS can import Terminal profiles
+- **Pet persona 🐾** — Swap monogram tiles for kawaii creatures whose face, wobble, and emote bubble track status (thinking, asking, error, done, idle, unread)
 - **Session persistence** — Restores session list on restart; agents resume with `--resume`
 - **⌘K search** — Quick session search by name, cwd, or output
 - **Shell preview** — Shows last command and working directory for shell sessions
+
+<p align="center">
+  <img src="design/chatterm-preview.png" alt="ChatTerm Highlights">
+</p>
 
 ## Tech Stack
 

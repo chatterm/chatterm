@@ -1,0 +1,71 @@
+# Kiro multi-turn conversation without tool calls. Parallels claude-chat
+# so the two can be compared turn-for-turn.
+
+agent = "kiro"
+case = "multi-turn"
+command = ["kiro-cli", "chat"]
+cwd = "/tmp/chatterm-capture-sandbox"
+cols = 140
+rows = 40
+idle_ms_default = 20000
+timeout_ms = 600000
+
+[[step]]
+kind = "wait_idle"
+ms = 4000
+
+[[step]]
+kind = "send"
+data = "what does 'cache coherence' mean in one sentence?\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "rewrite that at a 10-year-old's reading level.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "compare async/await with threads in two bullets.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "which of those two is better for an IO-heavy web server and why?\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "list 5 real-world examples of critical sections. numbered list, one line each.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "summarize this whole conversation in 3 bullets.\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 30000
+
+[[step]]
+kind = "send"
+data = "/quit\r"
+
+[[step]]
+kind = "wait_idle"
+ms = 2000

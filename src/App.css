@@ -44,6 +44,41 @@ body {
 }
 .pulse-asking { animation: pulse-ring-asking 1s infinite; }
 
+/* Pet mode animations — subtle motion only, never strobing. Body wobble
+   reads as "alive but busy" without screaming for attention; the asking
+   wave is more pronounced because a blocked agent should pull the eye. */
+@keyframes pet-wobble {
+  0%,100% { transform: rotate(-2deg); }
+  50%     { transform: rotate(2deg); }
+}
+.pet-wobble { animation: pet-wobble 1.6s ease-in-out infinite; transform-origin: 50% 80%; }
+
+@keyframes pet-wave {
+  0%,100% { transform: rotate(-6deg); }
+  50%     { transform: rotate(6deg); }
+}
+.pet-wave { animation: pet-wave 0.6s ease-in-out infinite; transform-origin: 50% 80%; }
+
+@keyframes pet-shake {
+  0%,100% { transform: translateX(0); }
+  25%     { transform: translateX(-1.5px); }
+  75%     { transform: translateX(1.5px); }
+}
+.pet-shake { animation: pet-shake 0.3s ease-in-out infinite; }
+
+@keyframes pet-blink {
+  0%,92%,100% { transform: scaleY(1); }
+  95%         { transform: scaleY(0.1); }
+}
+.pet-blink { animation: pet-blink 4s ease-in-out infinite; transform-origin: 50% 50%; transform-box: fill-box; }
+
+@keyframes pet-zzz {
+  0%   { opacity: 0.3; transform: translateY(0); }
+  50%  { opacity: 1;   transform: translateY(-2px); }
+  100% { opacity: 0.3; transform: translateY(0); }
+}
+.pet-zzz { animation: pet-zzz 1.6s ease-in-out infinite; }
+
 @keyframes fade-in { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
 @keyframes slide-in-top { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
 .new-row { animation: slide-in-top 400ms ease-out; }
