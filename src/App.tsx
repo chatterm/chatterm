@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -6,7 +6,7 @@ import Sidebar from "./Sidebar";
 import XtermPane from "./XtermPane";
 import CmdK from "./CmdK";
 import { Ic } from "./Icons";
-import { Session, SessionKind, PtyOutput, AVATAR_COLORS, isMenuMod } from "./types";
+import { Session, SessionKind, SplitDir, PtyOutput, AVATAR_COLORS, isMenuMod, MOD_KEY } from "./types";
 import { loadSavedTheme, applyTheme, getAllThemes, getCurrentTheme, setCurrentTheme, addImportedTheme, TerminalTheme } from "./themes";
 import { getPersona, setPersona, subscribePersona, Persona } from "./persona";
 import "./App.css";
@@ -20,6 +20,16 @@ const AGENT_INFO: Record<string, { mono: string; color: string; name: string }> 
 };
 
 let sessionCounter = 0;
+
+// Square ghost button used across the session header for fullscreen / split /
+// orientation. Inlined here so the three buttons stay visually identical
+// without each repeating ~10 lines of style.
+const headerBtn: React.CSSProperties = {
+  width: 28, height: 28, flex: "0 0 28px",
+  background: "transparent", border: "none", color: "var(--text-dim)",
+  cursor: "pointer", padding: 0, borderRadius: 4,
+  display: "flex", alignItems: "center", justifyContent: "center",
+};
 
 interface SessionMeta { id: string; name: string; kind: string; agent: string | null; command: string | null; cwd: string | null; host: string | null; pre_ssh_name: string | null; pinned: boolean; }
 
@@ -45,10 +55,22 @@ export default function App() {
   // const [recording, setRecording] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [systemThemes, setSystemThemes] = useState<string[]>([]);
+  // Split direction is a workspace-global preference, not per-session: most
+  // users prefer one layout and stick with it. Persisted to localStorage so
+  // a reload doesn't forget which way the user likes their panes oriented.
+  const [splitDir, setSplitDirState] = useState<SplitDir>(() => {
+    try { const v = localStorage.getItem("chatterm-split-dir"); if (v === "row" || v === "column") return v; } catch {}
+    return "row";
+  });
+  const setSplitDir = useCallback((d: SplitDir) => {
+    try { localStorage.setItem("chatterm-split-dir", d); } catch {}
+    setSplitDirState(d);
+  }, []);
   const sessionsRef = useRef<Session[]>([]);
   const activeIdRef = useRef<string | null>(null);
   const lastOutputRef = useRef<Record<string, number>>({});
   const initRef = useRef(false);
+  const createdPtys = useRef<Set<string>>(new Set());
 
   sessionsRef.current = sessions;
   activeIdRef.current = activeId;
@@ -104,18 +126,17 @@ export default function App() {
           setSessions(restored);
           setActiveId(restored[0]?.id || null);
 
-          // Recreate PTY sessions — just open shell in cwd, don't auto-resume agents.
-          // "~" is a shell alias, not a real path; pass null so the backend falls
-          // back to $HOME. After create_session resolves we pull the live cwd via
-          // `session_cwd` — the pty-meta listener may not be registered in time
-          // for the backend's opportunistic initial emit.
-          for (const m of saved) {
-            // SSH sessions store remote paths — don't use them as local PTY cwd
-            const spawnCwd = m.cwd && m.cwd !== "~" && !m.host ? m.cwd : null;
-            invoke("create_session", { id: m.id, cols: 120, rows: 40, command: null, cwd: spawnCwd })
-              .then(() => invoke<string | null>("session_cwd", { id: m.id }))
+          // Only create the active (first) session immediately; others are
+          // created lazily when the user switches to them. This avoids
+          // spawning N login shells in parallel on startup.
+          const first = saved[0];
+          if (first) {
+            createdPtys.current.add(first.id);
+            const spawnCwd = first.cwd && first.cwd !== "~" && !first.host ? first.cwd : null;
+            invoke("create_session", { id: first.id, cols: 120, rows: 40, command: null, cwd: spawnCwd })
+              .then(() => invoke<string | null>("session_cwd", { id: first.id }))
               .then(cwd => {
-                if (cwd) setSessions(prev => prev.map(s => s.id === m.id ? { ...s, cwd } : s));
+                if (cwd) setSessions(prev => prev.map(s => s.id === first.id ? { ...s, cwd } : s));
               })
               .catch(() => {});
           }
@@ -153,6 +174,7 @@ export default function App() {
     const unlisten = listen<PtyMeta>("pty-meta", (event) => {
       const { session_id, agent, state, preview, command, cwd: metaCwd } = event.payload;
 
+      let didChange = false;
       setSessions(prev => prev.map(s => {
         if (s.id !== session_id) return s;
         const updates: Partial<Session> = {};
@@ -236,7 +258,7 @@ export default function App() {
         }
 
         // Preview from Rust (already cleaned) — this means a real new message
-        if (preview) {
+        if (preview && preview !== s.lastPreview) {
           const isActive = session_id === activeIdRef.current;
           updates.lastPreview = preview;
           updates.lastActive = Date.now();
@@ -245,10 +267,21 @@ export default function App() {
           }
         }
 
-        return Object.keys(updates).length > 0 ? { ...s, ...updates } : s;
+        // Bail out when the would-be updates equal what we already have.
+        // Otherwise every prompt redraw (which re-emits the same cwd via OSC 7)
+        // creates a fresh session object and re-renders the whole sidebar —
+        // visibly stutters when the user mashes Enter, especially with the
+        // pet avatar SVG animations re-running on each pass.
+        const changed = Object.entries(updates).some(([k, v]) => (s as unknown as Record<string, unknown>)[k] !== v);
+        if (changed) didChange = true;
+        return changed ? { ...s, ...updates } : s;
       }));
-      // Persist when agent detected or cwd/command changed
-      if (agent || metaCwd || command) { setTimeout(() => persistSessions(sessionsRef.current), 100); }
+      // Persist only when a value actually changed. The session list is the
+      // source of truth — diffing it (rather than the event payload) catches
+      // OSC 7 re-emits where the cwd string is identical.
+      if (didChange && (agent || metaCwd || command)) {
+        setTimeout(() => persistSessions(sessionsRef.current), 100);
+      }
     });
     return () => { unlisten.then(f => f()); };
   }, []);
@@ -274,6 +307,7 @@ export default function App() {
   const createSession = useCallback(async (name: string, command?: string) => {
     const session = makeSession(name);
     session._command = command || null;
+    createdPtys.current.add(session.id);
     setSessions(prev => { const next = [...prev, session]; persistSessions(next); return next; });
     setActiveId(session.id);
     try {
@@ -315,11 +349,49 @@ export default function App() {
     }
   }, []);
 
+  // Open / close a side-by-side shell PTY for the active session. Sidecars
+  // are runtime-only: not persisted across restarts, and each lives only
+  // while its parent session is alive. Spawning inherits the parent's cwd
+  // so the sidecar starts where the user is "working", which is the whole
+  // point — quick `git status` / `ls` next to a busy agent.
+  const toggleSplit = useCallback(async () => {
+    const a = sessionsRef.current.find(s => s.id === activeIdRef.current);
+    if (!a) return;
+    if (a.sidecarId) {
+      const sideId = a.sidecarId;
+      setSessions(prev => prev.map(s => s.id === a.id ? { ...s, sidecarId: undefined } : s));
+      invoke("kill_session", { id: sideId }).catch(() => {});
+      return;
+    }
+    let cwd: string | null = a.cwd && a.cwd !== "~" ? a.cwd : null;
+    try {
+      const live = await invoke<string | null>("session_cwd", { id: a.id });
+      if (live) cwd = live;
+    } catch {}
+    const sideId = `${a.id}-side-${Date.now().toString(36)}`;
+    try {
+      await invoke("create_session", { id: sideId, cols: 120, rows: 40, command: null, cwd });
+    } catch (e) { console.error("sidecar spawn failed", e); return; }
+    setSessions(prev => prev.map(s => s.id === a.id ? { ...s, sidecarId: sideId } : s));
+  }, []);
+
   const handleNew = () => createSession(`Shell ${sessions.length + 1}`);
 
   const handleSelect = (id: string) => {
     setActiveId(id);
     setSessions(prev => prev.map(s => s.id === id ? { ...s, unread: 0 } : s));
+    // Lazy PTY creation for restored sessions
+    if (!createdPtys.current.has(id)) {
+      createdPtys.current.add(id);
+      const s = sessionsRef.current.find(s => s.id === id);
+      const spawnCwd = s?.cwd && s.cwd !== "~" && !s.host ? s.cwd : null;
+      invoke("create_session", { id, cols: 120, rows: 40, command: null, cwd: spawnCwd })
+        .then(() => invoke<string | null>("session_cwd", { id }))
+        .then(cwd => {
+          if (cwd) setSessions(prev => prev.map(s => s.id === id ? { ...s, cwd } : s));
+        })
+        .catch(() => {});
+    }
   };
 
   const toggleFullscreen = useCallback(async () => {
@@ -342,6 +414,11 @@ export default function App() {
         const k = e.key.toLowerCase();
         if (k === "k") { e.preventDefault(); setCmdkOpen(true); }
         if (k === "n") { e.preventDefault(); handleNew(); }
+        // Cmd+D toggles split, Cmd+Shift+D flips orientation. macOS Terminal /
+        // iTerm convention — D is also a Linux-Ctrl-Shift-safe key (Ctrl+D
+        // alone stays in xterm for EOF).
+        if (k === "d" && !e.shiftKey) { e.preventDefault(); toggleSplit(); }
+        if (k === "d" && e.shiftKey)  { e.preventDefault(); setSplitDir(splitDir === "row" ? "column" : "row"); }
       }
       if (e.key === "Escape") {
         // Only swallow ESC when an overlay is actually open; otherwise let it
@@ -353,7 +430,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler, true); // capture phase
     return () => window.removeEventListener("keydown", handler, true);
-  }, [cmdkOpen, themeOpen, sessions.length, toggleFullscreen]);
+  }, [cmdkOpen, themeOpen, sessions.length, toggleFullscreen, toggleSplit, splitDir, setSplitDir]);
 
   const active = sessions.find(s => s.id === activeId);
 
@@ -366,6 +443,8 @@ export default function App() {
         onRename={(id, name) => setSessions(prev => prev.map(s => s.id === id ? { ...s, short: name, name } : s))}
         onKill={(id) => {
           invoke("kill_session", { id }).catch(() => {});
+          const sideId = sessionsRef.current.find(s => s.id === id)?.sidecarId;
+          if (sideId) invoke("kill_session", { id: sideId }).catch(() => {});
           setSessions(prev => {
             const next = prev.filter(s => s.id !== id);
             if (activeId === id) setActiveId(next[0]?.id || null);
@@ -404,14 +483,33 @@ export default function App() {
             )}
             <div style={{ flex: 1 }} />
             <button
+              onClick={toggleSplit}
+              title={active.sidecarId
+                ? `Close split (${MOD_KEY}D)`
+                : `Open split, ${splitDir === "row" ? "side by side" : "stacked"} (${MOD_KEY}D)`}
+              style={headerBtn}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--sidebar-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = active.sidecarId ? "var(--accent)" : "var(--text-dim)"; }}
+            >
+              {active.sidecarId
+                ? (splitDir === "row" ? <Ic.splitRow style={{ color: "var(--accent)" }}/> : <Ic.splitCol style={{ color: "var(--accent)" }}/>)
+                : <Ic.splitOff />}
+            </button>
+            {active.sidecarId && (
+              <button
+                onClick={() => setSplitDir(splitDir === "row" ? "column" : "row")}
+                title={`Switch to ${splitDir === "row" ? "stacked" : "side-by-side"} layout (${MOD_KEY}⇧D)`}
+                style={headerBtn}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--sidebar-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-dim)"; }}
+              >
+                {splitDir === "row" ? <Ic.splitCol /> : <Ic.splitRow />}
+              </button>
+            )}
+            <button
               onClick={toggleFullscreen}
               title="Toggle fullscreen (F11)"
-              style={{
-                width: 28, height: 28, flex: "0 0 28px",
-                background: "transparent", border: "none", color: "var(--text-dim)",
-                cursor: "pointer", padding: 0, borderRadius: 4,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}
+              style={headerBtn}
               onMouseEnter={e => { e.currentTarget.style.background = "var(--sidebar-hover)"; e.currentTarget.style.color = "var(--text)"; }}
               onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-dim)"; }}
             >
@@ -436,8 +534,28 @@ export default function App() {
             </button>
             */}
           </div>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <XtermPane key={active.id} sessionId={active.id} />
+          <div style={{
+            flex: 1, overflow: "hidden", display: "flex", flexDirection: splitDir,
+          }}>
+            <div style={{ flex: 1, overflow: "hidden", minWidth: 0, minHeight: 0 }}>
+              <XtermPane key={active.id} sessionId={active.id} />
+            </div>
+            {active.sidecarId && (
+              <>
+                {/* Explicit divider — flex `gap` reads heavier in column mode
+                    than row at the same pixel count (xterm's bottom-row
+                    leading piles on top). Sizing per axis here keeps both
+                    orientations feeling like the same hairline. */}
+                <div style={{
+                  flex: "0 0 auto", background: "var(--sidebar-bg)",
+                  width:  splitDir === "row"    ? 1 : "auto",
+                  height: splitDir === "column" ? 2 : "auto",
+                }} />
+                <div style={{ flex: 1, overflow: "hidden", minWidth: 0, minHeight: 0 }}>
+                  <XtermPane key={active.sidecarId} sessionId={active.sidecarId} />
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : (
