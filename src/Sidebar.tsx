@@ -28,6 +28,9 @@ interface AvatarProps {
   thinking?: boolean;
   unread?: number;
   muted?: boolean;
+  // Stable per-session id. Pet mode hashes this into a species so two
+  // sessions of the same agent kind get different creatures.
+  seed?: string;
 }
 
 export function Avatar(props: AvatarProps) {
@@ -88,10 +91,10 @@ type PetEyes = "focused" | "curious" | "x" | "happy" | "closed" | "dot";
 type PetMouth = "smile" | "smirk" | "frown" | "o" | "neutral" | "gag";
 type PetFaceState = SessionStatus | "asking";
 
-// Pet mode treats species as decoration, not a kind indicator. Hashing the
-// session's stable monogram into one of six species gives every session a
-// pet but makes the bestiary feel varied — kinds are already conveyed by the
-// KindIcon next to the title.
+// Pet mode treats species as decoration, not a kind indicator. The seed is
+// the stable per-session id, so two Claude sessions (which share monogram
+// and colour) still hash to different creatures — kinds are conveyed by the
+// KindIcon next to the title, not by the species.
 const PET_SPECIES: PetSpeciesKey[] = ["cat", "fox", "ham", "pen", "bun", "owl"];
 
 function petSpeciesFor(seed: string): PetSpeciesKey {
@@ -110,8 +113,8 @@ function petFaceFor(state: PetFaceState, muted: boolean): { eyes: PetEyes; mouth
   return { eyes, mouth };
 }
 
-function PetAvatar({ av, size = 36, status, asking, group, thinking, unread = 0, muted = false }: AvatarProps) {
-  const species = petSpeciesFor(av.mono + av.color);
+function PetAvatar({ av, size = 36, status, asking, group, thinking, unread = 0, muted = false, seed }: AvatarProps) {
+  const species = petSpeciesFor(seed || av.mono + av.color);
   const effective: PetFaceState = asking ? "asking" : (status || "idle");
   const face = petFaceFor(effective, muted);
 
@@ -316,7 +319,7 @@ function SessionRow({ session: s, active, onClick, onPin, onRename, onKill, onRe
       onMouseLeave={() => setHover(false)}
     >
       <Avatar av={s.avatar} status={s.status} asking={s.asking} group={s.avatar.group}
-        kind={s.kind} thinking={s.thinking} unread={s.unread} muted={s.muted} />
+        kind={s.kind} thinking={s.thinking} unread={s.unread} muted={s.muted} seed={s.id} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
           <div style={{
