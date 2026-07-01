@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,6 +6,35 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
 import { PtyOutput, isMenuMod } from "./types";
 import { getCurrentTheme, toXtermTheme, subscribeTheme } from "./themes";
+
+// xterm paints its own selection overlay rather than a real DOM selection, so
+// the webview's native Cmd+C and right-click "Copy" read an empty
+// window.getSelection(). We copy term.getSelection() to the clipboard ourselves.
+async function copyToClipboard(text: string) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Fallback for webviews that block the async clipboard API.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch { /* nothing we can do */ }
+    document.body.removeChild(ta);
+  }
+}
+
+async function pasteFromClipboard(term: Terminal) {
+  try {
+    const text = await navigator.clipboard.readText();
+    // term.paste respects bracketed-paste mode so a multi-line paste doesn't
+    // run prematurely in the shell.
+    if (text) term.paste(text);
+  } catch { /* clipboard read blocked or empty */ }
+}
 
 // Global cache: one Terminal instance per session, survives re-renders
 const termCache = new Map<string, { term: Terminal; fit: FitAddon; unlisten: UnlistenFn | null; unsubTheme: () => void }>();
@@ -39,6 +68,15 @@ function getOrCreate(sessionId: string): { term: Terminal; fit: FitAddon } {
     if (isMenuMod(e)) {
       const k = e.key.toLowerCase();
       if (k === "k" || k === "n") return false;
+      // Copy ourselves: xterm's selection is not a real DOM selection, so the
+      // webview's native copy can't see it. Consume the copy gesture entirely
+      // so a Cmd/Ctrl+Shift+C never leaks into the shell. Paste is left to
+      // xterm's own textarea paste handler — intercepting it here would
+      // double-paste, since returning false doesn't preventDefault.
+      if (e.type === "keydown" && k === "c") {
+        if (term.hasSelection()) copyToClipboard(term.getSelection());
+        return false;
+      }
     }
     if (document.querySelector(".cmdk-backdrop")) return false;
     // Windows IME fix: when an IME composition is active, block modifier
@@ -99,6 +137,7 @@ interface Props {
 
 export default function XtermPane({ sessionId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; hasSel: boolean } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -185,7 +224,87 @@ export default function XtermPane({ sessionId }: Props) {
     };
   }, [sessionId]);
 
-  return <div ref={containerRef} style={{ width: "100%", height: "100%", overflow: "hidden" }} />;
+  return (
+    <div
+      ref={containerRef}
+      onContextMenu={(e) => {
+        // Native context menu can't read xterm's selection, so show our own.
+        e.preventDefault();
+        const term = termCache.get(sessionId)?.term;
+        setMenu({ x: e.clientX, y: e.clientY, hasSel: !!term?.hasSelection() });
+      }}
+      style={{ width: "100%", height: "100%", overflow: "hidden" }}
+    >
+      {menu && (
+        <TermContextMenu
+          x={menu.x}
+          y={menu.y}
+          hasSel={menu.hasSel}
+          onCopy={() => {
+            const term = termCache.get(sessionId)?.term;
+            if (term?.hasSelection()) copyToClipboard(term.getSelection());
+            setMenu(null);
+          }}
+          onPaste={() => {
+            const term = termCache.get(sessionId)?.term;
+            if (term) pasteFromClipboard(term);
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TermContextMenu({ x, y, hasSel, onCopy, onPaste, onClose }: {
+  x: number; y: number; hasSel: boolean;
+  onCopy: () => void; onPaste: () => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Capture phase so a click anywhere (including inside xterm) is caught
+    // before xterm can swallow it. Ignore clicks landing on the menu itself so
+    // the item's onClick still runs.
+    const close = (e: MouseEvent) => {
+      if (ref.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    window.addEventListener("mousedown", close, true);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("mousedown", close, true);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+
+  const item: React.CSSProperties = {
+    padding: "5px 14px", fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
+    color: "var(--text)", fontFamily: "inherit",
+  };
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "fixed", left: x, top: y, zIndex: 1000, minWidth: 120,
+        background: "var(--panel-bg)", border: "1px solid var(--border-strong)",
+        borderRadius: 6, padding: "4px 0", boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+      }}
+    >
+      <div
+        style={{ ...item, opacity: hasSel ? 1 : 0.4, cursor: hasSel ? "pointer" : "default" }}
+        onMouseEnter={(e) => { if (hasSel) e.currentTarget.style.background = "var(--sidebar-hover)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        onClick={() => hasSel && onCopy()}
+      >Copy</div>
+      <div
+        style={item}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--sidebar-hover)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+        onClick={onPaste}
+      >Paste</div>
+    </div>
+  );
 }
 
 // Cleanup when session is killed
