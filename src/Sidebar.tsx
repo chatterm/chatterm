@@ -1,5 +1,5 @@
 import React from "react";
-import { Session, SessionAvatar, SessionKind, SessionStatus, statusColor, relTime, truncate, MOD_KEY } from "./types";
+import { Session, SessionAvatar, SessionKind, SessionStatus, statusColor, relTime, truncate, MOD_KEY, AVATAR_COLORS } from "./types";
 import { Ic } from "./Icons";
 import { getCurrentTheme, subscribeTheme } from "./themes";
 import { getPersona, subscribePersona } from "./persona";
@@ -91,16 +91,27 @@ type PetEyes = "focused" | "curious" | "x" | "happy" | "closed" | "dot";
 type PetMouth = "smile" | "smirk" | "frown" | "o" | "neutral" | "gag";
 type PetFaceState = SessionStatus | "asking";
 
-// Pet mode treats species as decoration, not a kind indicator. The seed is
-// the stable per-session id, so two Claude sessions (which share monogram
-// and colour) still hash to different creatures — kinds are conveyed by the
-// KindIcon next to the title, not by the species.
+// Pet mode treats both species and body colour as decoration, not kind
+// indicators. Everything is keyed off the stable per-session id so that N
+// Claude sessions — which share the same monogram AND brand colour in
+// operator mode — each get a distinct creature and hue here. Kind is conveyed
+// by the KindIcon next to the title, not by the pet's look.
 const PET_SPECIES: PetSpeciesKey[] = ["cat", "fox", "ham", "pen", "bun", "owl"];
 
-function petSpeciesFor(seed: string): PetSpeciesKey {
+function petHash(seed: string): number {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-  return PET_SPECIES[Math.abs(h) % PET_SPECIES.length];
+  return Math.abs(h);
+}
+
+function petSpeciesFor(seed: string): PetSpeciesKey {
+  return PET_SPECIES[petHash(seed) % PET_SPECIES.length];
+}
+
+// Salt the hash so colour and species don't move in lockstep — two ids that
+// collide on species still usually land on different colours.
+function petColorFor(seed: string): string {
+  return AVATAR_COLORS[petHash("c:" + seed) % AVATAR_COLORS.length];
 }
 
 function petFaceFor(state: PetFaceState, muted: boolean): { eyes: PetEyes; mouth: PetMouth } {
@@ -114,7 +125,9 @@ function petFaceFor(state: PetFaceState, muted: boolean): { eyes: PetEyes; mouth
 }
 
 function PetAvatar({ av, size = 36, status, asking, group, thinking, unread = 0, muted = false, seed }: AvatarProps) {
-  const species = petSpeciesFor(seed || av.mono + av.color);
+  const petSeed = seed || av.mono + av.color;
+  const species = petSpeciesFor(petSeed);
+  const petColor = petColorFor(petSeed);
   const effective: PetFaceState = asking ? "asking" : (status || "idle");
   const face = petFaceFor(effective, muted);
 
@@ -145,7 +158,7 @@ function PetAvatar({ av, size = 36, status, asking, group, thinking, unread = 0,
       filter: muted ? "saturate(0.25) brightness(0.85)" : "none",
     }}>
       <div className={wob} style={{
-        width: size, height: size, borderRadius: "32%", background: av.color,
+        width: size, height: size, borderRadius: "32%", background: petColor,
         boxShadow: "inset 0 -2px 0 rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.18)",
         position: "relative", overflow: "visible",
       }}>
