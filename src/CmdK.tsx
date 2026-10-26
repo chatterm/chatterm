@@ -74,7 +74,7 @@ export default function CmdK({ sessions, onClose, onSelect }: Props) {
                 borderLeft: i === idx ? "2px solid var(--accent)" : "2px solid transparent",
               }}>
               <Avatar av={s.avatar} size={28} status={s.status} asking={s.asking} group={s.avatar.group}
-                kind={s.kind} thinking={s.thinking} unread={s.unread} muted={s.muted} />
+                kind={s.kind} thinking={s.thinking} unread={s.unread} muted={s.muted} seed={s.id} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 400, color: s.unread ? "var(--text-strong)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
                 <div className="mono" style={{ fontSize: 12, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.cwd || "—"}</div>

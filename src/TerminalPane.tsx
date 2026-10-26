@@ -202,7 +202,7 @@ export default function TerminalPane({ session, onSend, onTogglePin, onToggleMut
         borderBottom: "1px solid var(--border)", flex: "0 0 auto",
       }}>
         <Avatar av={session.avatar} size={30} status={session.status} asking={session.asking} group={session.avatar.group}
-          kind={session.kind} thinking={session.thinking} unread={session.unread} muted={session.muted} />
+          kind={session.kind} thinking={session.thinking} unread={session.unread} muted={session.muted} seed={session.id} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-strong)" }}>{session.name}</div>

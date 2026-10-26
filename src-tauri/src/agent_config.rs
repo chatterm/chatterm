@@ -119,9 +119,11 @@ impl AgentConfig {
     }
 
     pub fn detect_state_from_screen(&self, rows: &[String]) -> Option<&'static str> {
-        // Asking has highest priority — a permission dialog blocks the user
-        // regardless of whether the agent also looks "idle" by title.
-        for row in rows.iter() {
+        // Asking: only scan the bottom 6 rows. Permission dialogs are always
+        // at the bottom; scanning all rows causes false positives when the
+        // prompt text remains visible in the scrollback after approval.
+        let bottom = if rows.len() > 6 { rows.len() - 6 } else { 0 };
+        for row in rows[bottom..].iter().rev() {
             let t = row.trim();
             if t.is_empty() { continue; }
             for re in &self.asking_screen {
@@ -259,6 +261,9 @@ mod tests {
         assert_eq!(kiro.detect_state_from_screen(&["write requires approval".to_string()]), Some("asking"));
         assert_eq!(kiro.detect_state_from_screen(&["shell requires approval".to_string()]), Some("asking"));
         assert_eq!(kiro.detect_state_from_screen(&["❯ Yes, single permission".to_string()]), Some("asking"));
+        // Embedded text must NOT trigger asking
+        assert_ne!(kiro.detect_state_from_screen(&["            \"\\w+ requires approval\",".to_string()]), Some("asking"));
+        assert_ne!(kiro.detect_state_from_screen(&["● Shell write requires approval check".to_string()]), Some("asking"));
     }
     #[test]
     fn test_codex_thinking_detection() {

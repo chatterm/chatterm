@@ -27,7 +27,8 @@
           "screen_regex": [
             "^❯ 1\\. Yes",
             "^Esc to cancel · Tab to amend",
-            "^⏺ Interrupted · What should"
+            "^⏺ Interrupted · What should",
+            "^Enter to select .* Esc to cancel$"
           ]
         },
         "idle": {
@@ -113,9 +114,9 @@
         },
         "asking": {
           "screen_regex": [
-            "\\w+ requires approval",
-            "Yes, single permission",
-            "Trust, always allow in this session"
+            "^\\w+ requires approval$",
+            "^(❯\\s+)?Yes, single permission$",
+            "^(❯\\s+)?Trust, always allow in this session$"
           ]
         },
         "idle": {
