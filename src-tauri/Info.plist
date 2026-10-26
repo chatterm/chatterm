@@ -4,5 +4,7 @@
 <dict>
 	<key>NSAppSleepDisabled</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ChatTerm needs local network access so programs you run in the terminal (for example ssh) can reach other machines on your LAN.</string>
 </dict>
 </plist>

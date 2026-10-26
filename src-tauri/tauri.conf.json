@@ -39,7 +39,9 @@
       "../scripts/setup-hooks.ps1": "setup-hooks.ps1"
     },
     "macOS": {
-      "infoPlist": "Info.plist"
+      "infoPlist": "Info.plist",
+      "signingIdentity": "-",
+      "hardenedRuntime": false
     }
   }
 }
